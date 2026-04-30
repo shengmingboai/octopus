@@ -17,10 +17,11 @@ export function SettingInfo() {
     const backendNowVersion = nowVersionQuery.data || '';
     const latestVersion = latestInfoQuery.data?.tag_name || '';
 
+    const isDevMode = isDev || backendNowVersion === 'dev';
     // 前端版本与后端当前版本不一致 → 浏览器缓存问题
-    const isCacheMismatch = !!backendNowVersion && backendNowVersion !== APP_VERSION;
+    const isCacheMismatch = !isDevMode && !!backendNowVersion && backendNowVersion !== APP_VERSION;
     // 最新版本与后端当前版本不一致 → 有新版本可更新
-    const hasNewVersion = latestVersion && backendNowVersion && latestVersion !== backendNowVersion;
+    const hasNewVersion = !isDevMode && latestVersion && backendNowVersion && latestVersion !== backendNowVersion;
 
     const clearCacheAndReload = async () => {
         // 通知 Service Worker 清理缓存
@@ -103,7 +104,7 @@ export function SettingInfo() {
             </div>
 
             {/* 最新版本 */}
-            {!isDev && (
+            {!isDevMode && (
             <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                     <Download className="h-5 w-5 text-muted-foreground" />
