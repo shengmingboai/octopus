@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -186,26 +188,41 @@ func relayLogCleanup(ctx context.Context) error {
 	return db.GetDB().WithContext(ctx).Where("time < ?", cutoffTime).Delete(&model.RelayLog{}).Error
 }
 
-// RelayLogList 查询日志列表，支持可选的时间范围过滤
+// RelayLogList 查询日志列表，支持可选的时间范围过滤和筛选条件
 // startTime 和 endTime 为 nil 时表示不限制时间范围
-func RelayLogList(ctx context.Context, startTime, endTime *int, page, pageSize int) ([]model.RelayLog, error) {
+// channelIDs 为空表示不限制渠道
+// requestModelName 为空表示不限制请求模型名（模糊匹配）
+// requestAPIKeyName 为空表示不限制请求密钥名称
+func RelayLogList(ctx context.Context, startTime, endTime *int, page, pageSize int, channelIDs []int, requestModelName, requestAPIKeyName string) ([]model.RelayLog, error) {
 	enabled, err := SettingGetBool(model.SettingKeyRelayLogKeepEnabled)
 	if err != nil {
 		return nil, err
 	}
 	hasTimeFilter := startTime != nil && endTime != nil
+	hasChannelFilter := len(channelIDs) > 0
+	hasModelFilter := requestModelName != ""
+	hasAPIKeyFilter := requestAPIKeyName != ""
+	requestModelNameLower := strings.ToLower(requestModelName)
 
 	// 获取缓存中符合条件的日志
 	relayLogCacheLock.Lock()
 	var cachedLogs []model.RelayLog
-	for _, log := range relayLogCache {
+	for _, l := range relayLogCache {
 		if hasTimeFilter {
-			if log.Time >= int64(*startTime) && log.Time <= int64(*endTime) {
-				cachedLogs = append(cachedLogs, log)
+			if l.Time < int64(*startTime) || l.Time > int64(*endTime) {
+				continue
 			}
-		} else {
-			cachedLogs = append(cachedLogs, log)
 		}
+		if hasChannelFilter && !slices.Contains(channelIDs, l.ChannelId) {
+			continue
+		}
+		if hasModelFilter && !strings.Contains(strings.ToLower(l.RequestModelName), requestModelNameLower) {
+			continue
+		}
+		if hasAPIKeyFilter && l.RequestAPIKeyName != requestAPIKeyName {
+			continue
+		}
+		cachedLogs = append(cachedLogs, l)
 	}
 	relayLogCacheLock.Unlock()
 
@@ -240,6 +257,15 @@ func RelayLogList(ctx context.Context, startTime, endTime *int, page, pageSize i
 			query := db.GetDB().WithContext(ctx)
 			if hasTimeFilter {
 				query = query.Where("time >= ? AND time <= ?", *startTime, *endTime)
+			}
+			if hasChannelFilter {
+				query = query.Where("channel_id IN ?", channelIDs)
+			}
+			if hasModelFilter {
+				query = query.Where("LOWER(request_model_name) LIKE ?", "%"+requestModelNameLower+"%")
+			}
+			if hasAPIKeyFilter {
+				query = query.Where("request_api_key_name = ?", requestAPIKeyName)
 			}
 
 			var dbLogs []model.RelayLog

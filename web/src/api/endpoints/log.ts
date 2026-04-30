@@ -48,6 +48,15 @@ export interface RelayLog {
 }
 
 /**
+ * 日志筛选参数
+ */
+export interface LogFilters {
+    channel_ids?: number[];
+    request_model_name?: string;
+    request_api_key_name?: string;
+}
+
+/**
  * 日志列表查询参数
  */
 export interface LogListParams {
@@ -55,6 +64,9 @@ export interface LogListParams {
     page_size?: number;
     start_time?: number;
     end_time?: number;
+    channel_ids?: number[];
+    request_model_name?: string;
+    request_api_key_name?: string;
 }
 
 /**
@@ -82,7 +94,13 @@ export function useClearLogs() {
     });
 }
 
-const logsInfiniteQueryKey = (pageSize: number) => ['logs', 'infinite', pageSize] as const;
+const logsInfiniteQueryKey = (pageSize: number, filters?: LogFilters) => {
+    const key: unknown[] = ['logs', 'infinite', pageSize];
+    if (filters?.channel_ids?.length) key.push(filters.channel_ids.join(','));
+    if (filters?.request_model_name) key.push(filters.request_model_name);
+    if (filters?.request_api_key_name) key.push(filters.request_api_key_name);
+    return key as readonly unknown[];
+};
 
 /**
  * 日志管理 Hook
@@ -97,22 +115,33 @@ const logsInfiniteQueryKey = (pageSize: number) => ['logs', 'infinite', pageSize
  * // 滚动到底部时加载更多
  * if (hasMore && !isLoadingMore) loadMore();
  */
-export function useLogs(options: { pageSize?: number } = {}) {
-    const { pageSize = 20 } = options;
+export function useLogs(options: { pageSize?: number; filters?: LogFilters } = {}) {
+    const { pageSize = 20, filters } = options;
 
     const [isConnected, setIsConnected] = useState(false);
     const [error, setError] = useState<Error | null>(null);
     const eventSourceRef = useRef<EventSource | null>(null);
+    const filtersRef = useRef(filters);
+    filtersRef.current = filters;
 
     const queryClient = useQueryClient();
 
     const logsQuery = useInfiniteQuery({
-        queryKey: logsInfiniteQueryKey(pageSize),
+        queryKey: logsInfiniteQueryKey(pageSize, filters),
         initialPageParam: 1,
         queryFn: async ({ pageParam }) => {
             const params = new URLSearchParams();
             params.set('page', String(pageParam));
             params.set('page_size', String(pageSize));
+            if (filters?.channel_ids?.length) {
+                params.set('channel_ids', filters.channel_ids.join(','));
+            }
+            if (filters?.request_model_name) {
+                params.set('request_model_name', filters.request_model_name);
+            }
+            if (filters?.request_api_key_name) {
+                params.set('request_api_key_name', filters.request_api_key_name);
+            }
             const result = await apiClient.get<RelayLog[] | null>(`/api/v1/log/list?${params.toString()}`);
             return result ?? [];
         },
@@ -171,8 +200,14 @@ export function useLogs(options: { pageSize?: number } = {}) {
                 eventSource.onmessage = (event) => {
                     try {
                         const log: RelayLog = JSON.parse(event.data);
+
+                        const f = filtersRef.current;
+                        if (f?.channel_ids?.length && !f.channel_ids.includes(log.channel)) return;
+                        if (f?.request_model_name && !log.request_model_name.toLowerCase().includes(f.request_model_name.toLowerCase())) return;
+                        if (f?.request_api_key_name && log.request_api_key_name !== f.request_api_key_name) return;
+
                         queryClient.setQueryData(
-                            logsInfiniteQueryKey(pageSize),
+                            logsInfiniteQueryKey(pageSize, filtersRef.current),
                             (old: InfiniteData<RelayLog[], number> | undefined) => {
                                 if (!old) {
                                     return { pages: [[log]], pageParams: [1] };
@@ -214,7 +249,7 @@ export function useLogs(options: { pageSize?: number } = {}) {
     }, [pageSize, queryClient]);
 
     const clear = useCallback(() => {
-        queryClient.removeQueries({ queryKey: logsInfiniteQueryKey(pageSize) });
+        queryClient.removeQueries({ queryKey: logsInfiniteQueryKey(pageSize, filtersRef.current) });
     }, [pageSize, queryClient]);
 
     return {

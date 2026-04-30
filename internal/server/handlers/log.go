@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/bestruirui/octopus/internal/op"
 	"github.com/bestruirui/octopus/internal/server/middleware"
@@ -41,6 +42,9 @@ func listLog(c *gin.Context) {
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
 	startTimeStr := c.Query("start_time")
 	endTimeStr := c.Query("end_time")
+	channelIDsStr := c.Query("channel_ids")
+	requestModelName := c.Query("request_model_name")
+	requestAPIKeyName := c.Query("request_api_key_name")
 
 	if page < 1 {
 		page = 1
@@ -65,7 +69,19 @@ func listLog(c *gin.Context) {
 		endTime = &et
 	}
 
-	logs, err := op.RelayLogList(c.Request.Context(), startTime, endTime, page, pageSize)
+	var channelIDs []int
+	if channelIDsStr != "" {
+		for _, s := range strings.Split(channelIDsStr, ",") {
+			id, err := strconv.Atoi(strings.TrimSpace(s))
+			if err != nil {
+				resp.Error(c, http.StatusBadRequest, "invalid channel_ids")
+				return
+			}
+			channelIDs = append(channelIDs, id)
+		}
+	}
+
+	logs, err := op.RelayLogList(c.Request.Context(), startTime, endTime, page, pageSize, channelIDs, requestModelName, requestAPIKeyName)
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return

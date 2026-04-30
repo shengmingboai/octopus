@@ -429,6 +429,25 @@
         }
     },
     "log": {
+        "filter": {
+            "title": "Filters",
+            "clear": "Clear",
+            "group": {
+                "placeholder": "Select group",
+                "all": "All groups"
+            },
+            "channel": {
+                "placeholder": "Select channel",
+                "all": "All channels"
+            },
+            "model": {
+                "placeholder": "Search request model name..."
+            },
+            "apikey": {
+                "placeholder": "Select API key",
+                "all": "All keys"
+            }
+        },
         "list": {
             "noMore": "No more logs"
         },

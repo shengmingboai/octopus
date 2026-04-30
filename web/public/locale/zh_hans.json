@@ -429,6 +429,25 @@
         }
     },
     "log": {
+        "filter": {
+            "title": "筛选",
+            "clear": "清除",
+            "group": {
+                "placeholder": "选择分组",
+                "all": "全部分组"
+            },
+            "channel": {
+                "placeholder": "选择渠道",
+                "all": "全部渠道"
+            },
+            "model": {
+                "placeholder": "搜索请求模型名..."
+            },
+            "apikey": {
+                "placeholder": "选择请求密钥",
+                "all": "全部密钥"
+            }
+        },
         "list": {
             "noMore": "没有更多日志了"
         },

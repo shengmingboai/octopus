@@ -429,6 +429,25 @@
         }
     },
     "log": {
+        "filter": {
+            "title": "篩選",
+            "clear": "清除",
+            "group": {
+                "placeholder": "選擇分組",
+                "all": "全部分組"
+            },
+            "channel": {
+                "placeholder": "選擇渠道",
+                "all": "全部渠道"
+            },
+            "model": {
+                "placeholder": "搜索請求模型名..."
+            },
+            "apikey": {
+                "placeholder": "選擇請求密鑰",
+                "all": "全部密鑰"
+            }
+        },
         "list": {
             "noMore": "沒有更多日誌了"
         },
