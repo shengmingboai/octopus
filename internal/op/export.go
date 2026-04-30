@@ -19,17 +19,16 @@ const (
 )
 
 var (
-	exportTasks        = make(map[string]*exportTaskState)
-	exportTasksMu      sync.RWMutex
-	exportSubscribers  = make(map[string][]chan model.ExportProgress)
+	exportTasks         = make(map[string]*exportTaskState)
+	exportTasksMu       sync.RWMutex
+	exportSubscribers   = make(map[string][]chan model.ExportProgress)
 	exportSubscribersMu sync.RWMutex
 )
 
 type exportTaskState struct {
 	task     model.ExportTask
 	cancel   context.CancelFunc
-	history  []model.ExportProgress
-	historyMu sync.RWMutex
+	readyCh  chan struct{} // closed when SSE connects; export goroutine waits for this
 }
 
 func init() {
@@ -54,11 +53,13 @@ func ExportStart(includeLogs, includeStats bool) (string, error) {
 		CreatedAt: time.Now(),
 	}
 
+	readyCh := make(chan struct{})
+
 	exportTasksMu.Lock()
-	exportTasks[taskID] = &exportTaskState{task: task, cancel: cancel}
+	exportTasks[taskID] = &exportTaskState{task: task, cancel: cancel, readyCh: readyCh}
 	exportTasksMu.Unlock()
 
-	go runExport(ctx, taskID, filePath, includeLogs, includeStats)
+	go runExport(ctx, readyCh, taskID, filePath, includeLogs, includeStats)
 
 	return taskID, nil
 }
@@ -88,7 +89,7 @@ func ExportGetTask(taskID string) *model.ExportTask {
 	return &task
 }
 
-// ExportSubscribe 订阅任务进度，异步回放历史进度
+// ExportSubscribe 订阅任务进度，通知导出 goroutine 开始
 func ExportSubscribe(taskID string) chan model.ExportProgress {
 	ch := make(chan model.ExportProgress, 256)
 
@@ -96,23 +97,16 @@ func ExportSubscribe(taskID string) chan model.ExportProgress {
 	exportSubscribers[taskID] = append(exportSubscribers[taskID], ch)
 	exportSubscribersMu.Unlock()
 
-	// 异步回放历史进度，避免阻塞 SSE handler
+	// 通知导出 goroutine：SSE 已连接，可以开始导出
 	exportTasksMu.RLock()
 	state, ok := exportTasks[taskID]
 	exportTasksMu.RUnlock()
-	if ok {
-		go func() {
-			state.historyMu.RLock()
-			history := make([]model.ExportProgress, len(state.history))
-			copy(history, state.history)
-			state.historyMu.RUnlock()
-			for _, p := range history {
-				select {
-				case ch <- p:
-				default:
-				}
-			}
-		}()
+	if ok && state.readyCh != nil {
+		select {
+		case <-state.readyCh:
+		default:
+			close(state.readyCh)
+		}
 	}
 
 	return ch
@@ -136,38 +130,16 @@ func ExportUnsubscribe(taskID string, ch chan model.ExportProgress) {
 }
 
 func notifyExportSubscribers(taskID string, progress model.ExportProgress) {
-	// 存入历史
-	exportTasksMu.RLock()
-	state, hasState := exportTasks[taskID]
-	exportTasksMu.RUnlock()
-
-	if hasState {
-		state.historyMu.Lock()
-		state.history = append(state.history, progress)
-		state.historyMu.Unlock()
-	}
-
-	// 推送给活跃订阅者
 	exportSubscribersMu.RLock()
 	subs := exportSubscribers[taskID]
 	exportSubscribersMu.RUnlock()
 
 	for _, ch := range subs {
-		select {
-		case ch <- progress:
-		default:
-		}
+		ch <- progress
 	}
 }
 
-func runExport(ctx context.Context, taskID, filePath string, includeLogs, includeStats bool) {
-	// 给 SSE 连接留出时间
-	select {
-	case <-time.After(500 * time.Millisecond):
-	case <-ctx.Done():
-		return
-	}
-
+func runExport(ctx context.Context, readyCh chan struct{}, taskID, filePath string, includeLogs, includeStats bool) {
 	var err error
 	defer func() {
 		exportTasksMu.Lock()
@@ -202,6 +174,14 @@ func runExport(ctx context.Context, taskID, filePath string, includeLogs, includ
 			Error:  errMsg,
 		})
 	}()
+
+	// 等待 SSE 连接就绪（最多 3 秒），确保前端能收到每一条进度
+	select {
+	case <-readyCh:
+	case <-time.After(3 * time.Second):
+	case <-ctx.Done():
+		return
+	}
 
 	err = DBExportToFile(ctx, taskID, filePath, includeLogs, includeStats)
 }
