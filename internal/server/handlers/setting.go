@@ -150,10 +150,18 @@ func exportProgressSSE(c *gin.Context) {
 	ch := op.ExportSubscribe(taskID)
 	defer op.ExportUnsubscribe(taskID, ch)
 
+	doneCh := op.ExportGetDoneCh(taskID)
 	ctx := c.Request.Context()
 	for {
 		select {
 		case <-ctx.Done():
+			return
+		case <-doneCh:
+			// 导出完成，发送最终事件（兜底，防止 channel 事件被丢弃）
+			final := op.ExportGetFinalEvent(taskID)
+			data, _ := json.Marshal(final)
+			c.Writer.Write([]byte(fmt.Sprintf("data: %s\n\n", data)))
+			c.Writer.Flush()
 			return
 		case progress, ok := <-ch:
 			if !ok {

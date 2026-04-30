@@ -26,9 +26,10 @@ var (
 )
 
 type exportTaskState struct {
-	task     model.ExportTask
-	cancel   context.CancelFunc
-	readyCh  chan struct{} // closed when SSE connects; export goroutine waits for this
+	task       model.ExportTask
+	cancel     context.CancelFunc
+	doneCh     chan struct{} // closed when export finishes
+	finalEvent model.ExportProgress
 }
 
 func init() {
@@ -53,13 +54,13 @@ func ExportStart(includeLogs, includeStats bool) (string, error) {
 		CreatedAt: time.Now(),
 	}
 
-	readyCh := make(chan struct{})
+	doneCh := make(chan struct{})
 
 	exportTasksMu.Lock()
-	exportTasks[taskID] = &exportTaskState{task: task, cancel: cancel, readyCh: readyCh}
+	exportTasks[taskID] = &exportTaskState{task: task, cancel: cancel, doneCh: doneCh}
 	exportTasksMu.Unlock()
 
-	go runExport(ctx, readyCh, taskID, filePath, includeLogs, includeStats)
+	go runExport(ctx, taskID, filePath, doneCh, includeLogs, includeStats)
 
 	return taskID, nil
 }
@@ -89,25 +90,13 @@ func ExportGetTask(taskID string) *model.ExportTask {
 	return &task
 }
 
-// ExportSubscribe 订阅任务进度，通知导出 goroutine 开始
+// ExportSubscribe 订阅任务进度
 func ExportSubscribe(taskID string) chan model.ExportProgress {
 	ch := make(chan model.ExportProgress, 256)
 
 	exportSubscribersMu.Lock()
 	exportSubscribers[taskID] = append(exportSubscribers[taskID], ch)
 	exportSubscribersMu.Unlock()
-
-	// 通知导出 goroutine：SSE 已连接，可以开始导出
-	exportTasksMu.RLock()
-	state, ok := exportTasks[taskID]
-	exportTasksMu.RUnlock()
-	if ok && state.readyCh != nil {
-		select {
-		case <-state.readyCh:
-		default:
-			close(state.readyCh)
-		}
-	}
 
 	return ch
 }
@@ -126,7 +115,6 @@ func ExportUnsubscribe(taskID string, ch chan model.ExportProgress) {
 		delete(exportSubscribers, taskID)
 	}
 	exportSubscribersMu.Unlock()
-	close(ch)
 }
 
 func notifyExportSubscribers(taskID string, progress model.ExportProgress) {
@@ -135,53 +123,78 @@ func notifyExportSubscribers(taskID string, progress model.ExportProgress) {
 	exportSubscribersMu.RUnlock()
 
 	for _, ch := range subs {
-		ch <- progress
+		select {
+		case ch <- progress:
+		default:
+		}
 	}
 }
 
-func runExport(ctx context.Context, readyCh chan struct{}, taskID, filePath string, includeLogs, includeStats bool) {
+// ExportGetDoneCh 获取任务完成信号 channel
+func ExportGetDoneCh(taskID string) chan struct{} {
+	exportTasksMu.RLock()
+	state, ok := exportTasks[taskID]
+	exportTasksMu.RUnlock()
+	if !ok {
+		return nil
+	}
+	return state.doneCh
+}
+
+// ExportGetFinalEvent 获取任务最终状态事件
+func ExportGetFinalEvent(taskID string) model.ExportProgress {
+	exportTasksMu.RLock()
+	state, ok := exportTasks[taskID]
+	exportTasksMu.RUnlock()
+	if !ok {
+		return model.ExportProgress{Status: model.ExportStatusError, Error: "task not found"}
+	}
+	return state.finalEvent
+}
+
+func runExport(ctx context.Context, taskID, filePath string, doneCh chan struct{}, includeLogs, includeStats bool) {
+	// 给 SSE 连接留出时间
+	select {
+	case <-time.After(500 * time.Millisecond):
+	case <-ctx.Done():
+		close(doneCh)
+		return
+	}
+
 	var err error
 	defer func() {
+		var finalProgress model.ExportProgress
+
 		exportTasksMu.Lock()
 		state, ok := exportTasks[taskID]
 		if ok {
 			if r := recover(); r != nil {
 				state.task.Status = model.ExportStatusError
 				state.task.Error = fmt.Sprintf("panic: %v", r)
+				finalProgress = model.ExportProgress{Status: model.ExportStatusError, Error: state.task.Error}
 			} else if ctx.Err() != nil {
 				state.task.Status = model.ExportStatusCancelled
 				os.Remove(filePath)
+				finalProgress = model.ExportProgress{Status: model.ExportStatusCancelled}
 			} else if err != nil {
 				state.task.Status = model.ExportStatusError
 				state.task.Error = err.Error()
 				os.Remove(filePath)
+				finalProgress = model.ExportProgress{Status: model.ExportStatusError, Error: err.Error()}
 			} else {
 				state.task.Status = model.ExportStatusDone
+				finalProgress = model.ExportProgress{Status: model.ExportStatusDone}
 			}
+			state.finalEvent = finalProgress
 		}
 		exportTasksMu.Unlock()
 
-		status := model.ExportStatusDone
-		errMsg := ""
-		if ctx.Err() != nil {
-			status = model.ExportStatusCancelled
-		} else if err != nil {
-			status = model.ExportStatusError
-			errMsg = err.Error()
-		}
-		notifyExportSubscribers(taskID, model.ExportProgress{
-			Status: status,
-			Error:  errMsg,
-		})
-	}()
+		// 通知活跃订阅者
+		notifyExportSubscribers(taskID, finalProgress)
 
-	// 等待 SSE 连接就绪（最多 3 秒），确保前端能收到每一条进度
-	select {
-	case <-readyCh:
-	case <-time.After(3 * time.Second):
-	case <-ctx.Done():
-		return
-	}
+		// 关闭完成信号
+		close(doneCh)
+	}()
 
 	err = DBExportToFile(ctx, taskID, filePath, includeLogs, includeStats)
 }
