@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, API_BASE_URL } from '../client';
 import { logger } from '@/lib/logger';
@@ -114,21 +115,12 @@ function getAuthHeader(): string {
     return `Bearer ${token}`;
 }
 
-function parseFilename(contentDisposition: string | null): string | null {
-    if (!contentDisposition) return null;
-    // e.g. attachment; filename="octopus-export-20250101120000.json"
-    const match = contentDisposition.match(/filename="([^"]+)"/i);
-    return match?.[1] ?? null;
-}
-
-function exportFallbackFilename() {
-    const d = new Date();
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const ts = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
-    return `octopus-export-${ts}.json`;
-}
-
-async function downloadBlob(blob: Blob, filename: string) {
+async function downloadFile(taskId: string, filename: string) {
+    const res = await fetch(`${API_BASE_URL}/api/v1/setting/export/download?task_id=${taskId}`, {
+        headers: { Authorization: getAuthHeader() },
+    });
+    if (!res.ok) throw new Error('Download failed');
+    const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     try {
         const a = document.createElement('a');
@@ -142,37 +134,143 @@ async function downloadBlob(blob: Blob, filename: string) {
     }
 }
 
+export interface ExportProgressData {
+    table: string;
+    current: number;
+    total: number;
+    rows?: number;
+    status?: string;
+    error?: string;
+}
+
+export type ExportStatus = 'idle' | 'starting' | 'exporting' | 'done' | 'error';
+
 /**
- * 导出数据库（下载 JSON 文件）
+ * 导出数据库（异步任务 + SSE 进度）
  */
 export function useExportDB() {
-    return useMutation({
-        mutationFn: async (options: DBExportOptions = {}) => {
-            const params = new URLSearchParams();
-            params.set('include_logs', String(!!options.include_logs));
-            params.set('include_stats', String(!!options.include_stats));
+    const [status, setStatus] = useState<ExportStatus>('idle');
+    const [progress, setProgress] = useState<ExportProgressData | null>(null);
+    const abortRef = useRef<AbortController | null>(null);
+    const taskIdRef = useRef<string | null>(null);
+    const cancelledRef = useRef(false);
 
-            const res = await fetch(`${API_BASE_URL}/api/v1/setting/export?${params.toString()}`, {
-                method: 'GET',
-                headers: {
-                    Authorization: getAuthHeader(),
-                },
+    const startExport = useCallback(async (options: DBExportOptions) => {
+        setStatus('starting');
+        setProgress(null);
+        cancelledRef.current = false;
+
+        let taskId: string;
+        try {
+            const startRes = await apiClient.post<{ task_id: string }>('/api/v1/setting/export/start', {
+                include_logs: !!options.include_logs,
+                include_stats: !!options.include_stats,
             });
-
-            if (!res.ok) {
-                const text = await res.text();
-                throw new Error(text || res.statusText);
+            taskId = startRes.task_id;
+            taskIdRef.current = taskId;
+        } catch (e) {
+            if (e instanceof DOMException && e.name === 'AbortError') {
+                if (cancelledRef.current) throw new Error('__CANCELLED__');
+                return;
             }
+            throw e;
+        }
 
-            const blob = await res.blob();
-            const filename = parseFilename(res.headers.get('content-disposition')) || exportFallbackFilename();
-            await downloadBlob(blob, filename);
-            return { filename };
-        },
-        onError: (error) => {
-            logger.error('导出数据库失败:', error);
-        },
-    });
+        setStatus('exporting');
+        abortRef.current = new AbortController();
+
+        let sseRes: Response;
+        try {
+            sseRes = await fetch(`${API_BASE_URL}/api/v1/setting/export/progress?task_id=${taskId}`, {
+                headers: { Authorization: getAuthHeader() },
+                signal: abortRef.current.signal,
+            });
+        } catch (e) {
+            if (e instanceof DOMException && e.name === 'AbortError') {
+                if (cancelledRef.current) throw new Error('__CANCELLED__');
+                return;
+            }
+            throw e;
+        }
+
+        if (!sseRes.ok || !sseRes.body) {
+            throw new Error('Failed to connect to progress stream');
+        }
+
+        const reader = sseRes.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const parts = buffer.split('\n\n');
+                buffer = parts.pop()!;
+
+                for (const part of parts) {
+                    if (!part.startsWith('data: ')) continue;
+                    const data: ExportProgressData = JSON.parse(part.slice(6));
+                    if (data.status === 'connecting') continue;
+                    setProgress(data);
+
+                    if (data.status === 'done') {
+                        setStatus('done');
+                        await downloadFile(taskId, `octopus-export-${new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14)}.json`);
+                        return;
+                    }
+                    if (data.status === 'error') {
+                        setStatus('error');
+                        throw new Error(data.error || 'Export failed');
+                    }
+                    if (data.status === 'cancelled') {
+                        setStatus('idle');
+                        setProgress(null);
+                        return;
+                    }
+                }
+            }
+        } catch (e) {
+            if (e instanceof DOMException && e.name === 'AbortError') {
+                if (cancelledRef.current) throw new Error('__CANCELLED__');
+                return;
+            }
+            throw e;
+        } finally {
+            reader.releaseLock();
+        }
+    }, []);
+
+    const cancelExport = useCallback(async () => {
+        cancelledRef.current = true;
+        abortRef.current?.abort();
+        const taskId = taskIdRef.current;
+        if (taskId) {
+            try {
+                await apiClient.post('/api/v1/setting/export/cancel', { task_id: taskId });
+            } catch {
+                // ignore
+            }
+        }
+        setStatus('idle');
+        setProgress(null);
+        taskIdRef.current = null;
+    }, []);
+
+    const reset = useCallback(() => {
+        setStatus('idle');
+        setProgress(null);
+        taskIdRef.current = null;
+        abortRef.current?.abort();
+    }, []);
+
+    useEffect(() => {
+        return () => { abortRef.current?.abort(); };
+    }, []);
+
+    return { status, progress, startExport, cancelExport, reset };
 }
 
 /**

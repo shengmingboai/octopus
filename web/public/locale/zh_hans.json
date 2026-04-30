@@ -197,7 +197,12 @@
                 "includeStats": "包含统计",
                 "button": "下载 JSON",
                 "exporting": "导出中...",
-                "success": "开始导出"
+                "success": "开始导出",
+                "progress": "正在导出 {table}... ({current}/{total})",
+                "completed": "导出完成",
+                "cancelled": "导出已取消",
+                "cancel": "取消导出",
+                "failed": "导出失败"
             },
             "import": {
                 "title": "导入（增量）",

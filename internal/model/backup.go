@@ -1,6 +1,38 @@
 package model
 
-import "time"
+import (
+	"time"
+)
+
+// ExportTaskStatus 导出任务状态
+type ExportTaskStatus string
+
+const (
+	ExportStatusRunning   ExportTaskStatus = "running"
+	ExportStatusDone      ExportTaskStatus = "done"
+	ExportStatusError     ExportTaskStatus = "error"
+	ExportStatusCancelled ExportTaskStatus = "cancelled"
+)
+
+// ExportTask 异步导出任务
+type ExportTask struct {
+	ID        string           `json:"id"`
+	Status    ExportTaskStatus `json:"status"`
+	FilePath  string           `json:"-"`
+	FileName  string           `json:"file_name"`
+	CreatedAt time.Time        `json:"created_at"`
+	Error     string           `json:"error,omitempty"`
+}
+
+// ExportProgress 导出进度事件（通过 SSE 推送到前端）
+type ExportProgress struct {
+	Table   string           `json:"table"`
+	Current int              `json:"current"`
+	Total   int              `json:"total"`
+	Rows    int64            `json:"rows,omitempty"`
+	Status  ExportTaskStatus `json:"status,omitempty"`
+	Error   string           `json:"error,omitempty"`
+}
 
 // DBDump is a full-database JSON export format for Octopus.
 // Import uses incremental semantics (insert new rows, and upsert on certain key-based tables).

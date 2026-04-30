@@ -197,7 +197,12 @@
                 "includeStats": "Include Stats",
                 "button": "Download JSON",
                 "exporting": "Exporting...",
-                "success": "Export started"
+                "success": "Export started",
+                "progress": "Exporting {table}... ({current}/{total})",
+                "completed": "Export completed",
+                "cancelled": "Export cancelled",
+                "cancel": "Cancel export",
+                "failed": "Export failed"
             },
             "import": {
                 "title": "Import (Incremental)",

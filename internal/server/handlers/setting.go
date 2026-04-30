@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -30,8 +31,20 @@ func init() {
 				Handle(setSetting),
 		).
 		AddRoute(
-			router.NewRoute("/export", http.MethodGet).
-				Handle(exportDB),
+			router.NewRoute("/export/start", http.MethodPost).
+				Handle(exportStart),
+		).
+		AddRoute(
+			router.NewRoute("/export/progress", http.MethodGet).
+				Handle(exportProgressSSE),
+		).
+		AddRoute(
+			router.NewRoute("/export/cancel", http.MethodPost).
+				Handle(exportCancel),
+		).
+		AddRoute(
+			router.NewRoute("/export/download", http.MethodGet).
+				Handle(exportDownload),
 		).
 		AddRoute(
 			router.NewRoute("/import", http.MethodPost).
@@ -81,19 +94,123 @@ func setSetting(c *gin.Context) {
 	resp.Success(c, setting)
 }
 
-func exportDB(c *gin.Context) {
-	includeLogs, _ := strconv.ParseBool(c.DefaultQuery("include_logs", "false"))
-	includeStats, _ := strconv.ParseBool(c.DefaultQuery("include_stats", "false"))
+type exportStartRequest struct {
+	IncludeLogs  bool `json:"include_logs"`
+	IncludeStats bool `json:"include_stats"`
+}
 
-	dump, err := op.DBExportAll(c.Request.Context(), includeLogs, includeStats)
+func exportStart(c *gin.Context) {
+	var req exportStartRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	taskID, err := op.ExportStart(req.IncludeLogs, req.IncludeStats)
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
 
+	resp.Success(c, gin.H{"task_id": taskID})
+}
+
+func exportProgressSSE(c *gin.Context) {
+	taskID := c.Query("task_id")
+	if taskID == "" {
+		resp.Error(c, http.StatusBadRequest, "task_id is required")
+		return
+	}
+
+	task := op.ExportGetTask(taskID)
+	if task == nil {
+		resp.Error(c, http.StatusNotFound, "task not found")
+		return
+	}
+
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+
+	if task.Status != model.ExportStatusRunning {
+		data, _ := json.Marshal(model.ExportProgress{
+			Status: task.Status,
+			Error:  task.Error,
+		})
+		c.Writer.Write([]byte(fmt.Sprintf("data: %s\n\n", data)))
+		c.Writer.Flush()
+		return
+	}
+
+	// 先发一个连接确认事件，确保前端 ReadableStream 能立即读到数据
+	c.Writer.Write([]byte("data: {\"status\":\"connecting\"}\n\n"))
+	c.Writer.Flush()
+
+	ch := op.ExportSubscribe(taskID)
+	defer op.ExportUnsubscribe(taskID, ch)
+
+	ctx := c.Request.Context()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case progress, ok := <-ch:
+			if !ok {
+				return
+			}
+			data, err := json.Marshal(progress)
+			if err != nil {
+				continue
+			}
+			c.Writer.Write([]byte(fmt.Sprintf("data: %s\n\n", data)))
+			c.Writer.Flush()
+
+			if progress.Status != model.ExportStatusRunning {
+				return
+			}
+		}
+	}
+}
+
+func exportCancel(c *gin.Context) {
+	var req struct {
+		TaskID string `json:"task_id"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if err := op.ExportCancel(req.TaskID); err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	resp.Success(c, nil)
+}
+
+func exportDownload(c *gin.Context) {
+	taskID := c.Query("task_id")
+	if taskID == "" {
+		resp.Error(c, http.StatusBadRequest, "task_id is required")
+		return
+	}
+
+	task := op.ExportGetTask(taskID)
+	if task == nil {
+		resp.Error(c, http.StatusNotFound, "task not found")
+		return
+	}
+
+	if task.Status != model.ExportStatusDone {
+		resp.Error(c, http.StatusBadRequest, "export not completed, status: "+string(task.Status))
+		return
+	}
+
 	c.Header("Content-Type", "application/json")
-	c.Header("Content-Disposition", "attachment; filename=\"octopus-export-"+time.Now().Format("20060102150405")+".json\"")
-	c.JSON(http.StatusOK, dump)
+	c.Header("Content-Disposition", "attachment; filename=\""+task.FileName+"\"")
+	c.File(task.FilePath)
 }
 
 func importDB(c *gin.Context) {

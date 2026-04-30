@@ -2,17 +2,18 @@
 
 import { useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Database, Download, Upload } from 'lucide-react';
+import { Database, Download, Upload, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
+import { Progress } from '@/components/ui/progress';
 import { toast } from '@/components/common/Toast';
 import { useExportDB, useImportDB } from '@/api/endpoints/setting';
 
 export function SettingBackup() {
     const t = useTranslations('setting');
 
-    const exportDB = useExportDB();
+    const { status, progress, startExport, cancelExport, reset } = useExportDB();
     const importDB = useImportDB();
 
     const [includeLogs, setIncludeLogs] = useState(false);
@@ -50,12 +51,21 @@ export function SettingBackup() {
 
     const onExport = async () => {
         try {
-            await exportDB.mutateAsync({ include_logs: includeLogs, include_stats: includeStats });
-            toast.success(t('backup.export.success'));
+            toast.success(t('backup.export.exporting'));
+            await startExport({ include_logs: includeLogs, include_stats: includeStats });
         } catch (e) {
+            if (e instanceof Error && e.message === '__CANCELLED__') {
+                toast.error(t('backup.export.cancelled'));
+                return;
+            }
             toast.error(e instanceof Error ? e.message : t('backup.export.failed'));
         }
     };
+
+    const isExporting = status === 'starting' || status === 'exporting';
+    const progressPercent = progress && progress.total > 0
+        ? Math.round((progress.current / progress.total) * 100)
+        : 0;
 
     return (
         <div className="rounded-3xl border border-border bg-card p-6 space-y-5">
@@ -70,24 +80,54 @@ export function SettingBackup() {
 
                 <div className="flex items-center justify-between gap-4">
                     <div className="text-sm text-muted-foreground">{t('backup.export.includeLogs')}</div>
-                    <Switch checked={includeLogs} onCheckedChange={setIncludeLogs} />
+                    <Switch checked={includeLogs} onCheckedChange={setIncludeLogs} disabled={isExporting} />
                 </div>
 
                 <div className="flex items-center justify-between gap-4">
                     <div className="text-sm text-muted-foreground">{t('backup.export.includeStats')}</div>
-                    <Switch checked={includeStats} onCheckedChange={setIncludeStats} />
+                    <Switch checked={includeStats} onCheckedChange={setIncludeStats} disabled={isExporting} />
                 </div>
 
-                <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full rounded-xl"
-                    onClick={onExport}
-                    disabled={exportDB.isPending}
-                >
-                    <Download className="size-4" />
-                    {exportDB.isPending ? t('backup.export.exporting') : t('backup.export.button')}
-                </Button>
+                {isExporting ? (
+                    <div className="space-y-2">
+                        <Progress value={progressPercent} className="h-2 rounded-full" />
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                            <span>
+                                {progress
+                                    ? t('backup.export.progress', {
+                                        table: progress.table,
+                                        current: progress.current,
+                                        total: progress.total,
+                                    })
+                                    : t('backup.export.exporting')}
+                            </span>
+                            {progress?.rows !== undefined && progress.rows > 0 && (
+                                <span className="tabular-nums">{progress.rows.toLocaleString()} rows</span>
+                            )}
+                        </div>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            className="w-full rounded-xl"
+                            onClick={cancelExport}
+                        >
+                            <X className="size-4" />
+                            {t('backup.export.cancel')}
+                        </Button>
+                    </div>
+                ) : (
+                    <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full rounded-xl"
+                        onClick={status === 'done' || status === 'error' ? reset : onExport}
+                    >
+                        <Download className="size-4" />
+                        {status === 'done' ? t('backup.export.completed')
+                            : status === 'error' ? t('backup.export.failed')
+                            : t('backup.export.button')}
+                    </Button>
+                )}
             </div>
 
             <div className="h-px bg-border" />
@@ -132,5 +172,3 @@ export function SettingBackup() {
         </div>
     );
 }
-
-

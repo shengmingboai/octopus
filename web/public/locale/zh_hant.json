@@ -197,7 +197,12 @@
                 "includeStats": "包含統計",
                 "button": "下載 JSON",
                 "exporting": "匯出中...",
-                "success": "開始匯出"
+                "success": "開始匯出",
+                "progress": "正在匯出 {table}... ({current}/{total})",
+                "completed": "匯出完成",
+                "cancelled": "匯出已取消",
+                "cancel": "取消匯出",
+                "failed": "匯出失敗"
             },
             "import": {
                 "title": "匯入（增量）",
