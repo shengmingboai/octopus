@@ -40,8 +40,8 @@ jobs:
           cache: 'pnpm'
           cache-dependency-path: web/pnpm-lock.yaml
 
-      - name: Build
-        run: bash scripts/build.sh release
+      - name: Build (docker only)
+        run: bash scripts/build_docker.sh
 
       - name: Get latest tag
         id: tag
@@ -101,6 +101,8 @@ jobs:
           labels: ${{ steps.meta-alpine.outputs.labels }}
           build-args: |
             TARGETPLATFORM
+          cache-from: type=gha,scope=alpine
+          cache-to: type=gha,mode=max,scope=alpine
 
       - name: Build and push (Debian)
         uses: docker/build-push-action@v5
@@ -113,3 +115,5 @@ jobs:
           labels: ${{ steps.meta-debian.outputs.labels }}
           build-args: |
             TARGETPLATFORM
+          cache-from: type=gha,scope=debian
+          cache-to: type=gha,mode=max,scope=debian
