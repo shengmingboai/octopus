@@ -120,11 +120,10 @@ export function SettingBackup() {
                         type="button"
                         variant="outline"
                         className="w-full rounded-xl"
-                        onClick={status === 'done' || status === 'error' ? reset : onExport}
+                        onClick={status === 'error' ? reset : onExport}
                     >
                         <Download className="size-4" />
-                        {status === 'done' ? t('backup.export.completed')
-                            : status === 'error' ? t('backup.export.failed')
+                        {status === 'error' ? t('backup.export.failed')
                             : t('backup.export.button')}
                     </Button>
                 )}
