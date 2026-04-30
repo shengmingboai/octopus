@@ -88,31 +88,24 @@ func ExportGetTask(taskID string) *model.ExportTask {
 	return &task
 }
 
-// ExportSubscribe 订阅任务进度，异步回放历史进度
+// ExportSubscribe 订阅任务进度，立即回放全部历史进度
 func ExportSubscribe(taskID string) chan model.ExportProgress {
-	ch := make(chan model.ExportProgress, 256)
+	ch := make(chan model.ExportProgress, 64)
 
 	exportSubscribersMu.Lock()
 	exportSubscribers[taskID] = append(exportSubscribers[taskID], ch)
 	exportSubscribersMu.Unlock()
 
-	// 异步回放历史进度，避免阻塞 SSE handler
+	// 回放全部历史进度
 	exportTasksMu.RLock()
 	state, ok := exportTasks[taskID]
 	exportTasksMu.RUnlock()
 	if ok {
-		go func() {
-			state.historyMu.RLock()
-			history := make([]model.ExportProgress, len(state.history))
-			copy(history, state.history)
-			state.historyMu.RUnlock()
-			for _, p := range history {
-				select {
-				case ch <- p:
-				default:
-				}
-			}
-		}()
+		state.historyMu.RLock()
+		for _, p := range state.history {
+			ch <- p
+		}
+		state.historyMu.RUnlock()
 	}
 
 	return ch

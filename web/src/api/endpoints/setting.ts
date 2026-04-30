@@ -217,9 +217,8 @@ export function useExportDB() {
                     setProgress(data);
 
                     if (data.status === 'done') {
+                        setStatus('done');
                         await downloadFile(taskId, `octopus-export-${new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14)}.json`);
-                        setStatus('idle');
-                        setProgress(null);
                         return;
                     }
                     if (data.status === 'error') {
