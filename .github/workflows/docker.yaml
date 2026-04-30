@@ -117,3 +117,13 @@ jobs:
             TARGETPLATFORM
           cache-from: type=gha,scope=debian
           cache-to: type=gha,mode=max,scope=debian
+
+      - name: Trigger 1Panel container upgrade
+        if: success() && secrets.ONEPANEL_URL != ''
+        env:
+          ONEPANEL_URL: ${{ secrets.ONEPANEL_URL }}
+          ONEPANEL_API_KEY: ${{ secrets.ONEPANEL_API_KEY }}
+          CONTAINER_NAME: ${{ secrets.ONEPANEL_CONTAINER_NAME }}
+          IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:latest
+          TASK_ID: ${{ github.sha }}
+        run: bash scripts/trigger_1panel.sh
