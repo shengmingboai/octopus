@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 import { Info, Tag, Github, RefreshCw, AlertTriangle, Download, Loader2 } from 'lucide-react';
 import { APP_VERSION, GITHUB_REPO } from '@/lib/info';
-import { useLatestInfo, useNowVersion, useUpdateCore } from '@/api/endpoints/update';
+import { useLatestInfo, useNowVersion, useUpdateCore, isDev } from '@/api/endpoints/update';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/common/Toast';
 import { isOctopusCacheName, isFontCacheName, SW_MESSAGE_TYPE } from '@/lib/sw';
@@ -103,6 +103,7 @@ export function SettingInfo() {
             </div>
 
             {/* 最新版本 */}
+            {!isDev && (
             <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                     <Download className="h-5 w-5 text-muted-foreground" />
@@ -118,6 +119,7 @@ export function SettingInfo() {
                     )}
                 </div>
             </div>
+            )}
 
             {/* 浏览器缓存问题警告 */}
             {isCacheMismatch && (

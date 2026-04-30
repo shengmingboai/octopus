@@ -1,6 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../client';
 import { logger } from '@/lib/logger';
+import { APP_VERSION } from '@/lib/info';
+
+export const isDev = APP_VERSION === 'unknown';
 
 /**
  * 后端 /api/v1/update 返回的最新发布信息
@@ -29,6 +32,7 @@ export function useLatestInfo() {
         queryFn: async () => {
             return apiClient.get<LatestInfo>('/api/v1/update');
         },
+        enabled: !isDev,
         refetchInterval: 3600000, // 1 小时
         refetchOnMount: 'always',
     });
@@ -45,6 +49,7 @@ export function useNowVersion() {
         queryFn: async () => {
             return apiClient.get<string>('/api/v1/update/now-version');
         },
+        enabled: !isDev,
         refetchInterval: 3600000, // 1 小时
         refetchOnMount: 'always',
     });
