@@ -75,7 +75,7 @@ go run main.go start
 **开发模式**
 
 ```bash
-cd web && pnpm install && NEXT_PUBLIC_API_BASE_URL="http://127.0.0.1:8080" pnpm run dev
+cd web && pnpm install && pnpm run dev
 ## 新建终端,启动后端服务
 go run main.go start
 ## 访问前端地址
