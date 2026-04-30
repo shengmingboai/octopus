@@ -60,17 +60,6 @@ jobs:
             type=raw,value=latest
             type=raw,value=${{ steps.tag.outputs.TAG_NAME }}
 
-      - name: Docker meta (Alpine)
-        id: meta-alpine
-        uses: docker/metadata-action@v5
-        with:
-          images: |
-            ghcr.io/${{ github.repository }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}
-          tags: |
-            type=raw,value=latest-alpine
-            type=raw,value=${{ steps.tag.outputs.TAG_NAME }}-alpine
-
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -90,21 +79,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push (Alpine)
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./scripts/dockerfiles/Dockerfile.alpine
-          push: true
-          platforms: linux/amd64,linux/i386,linux/arm64,linux/arm/v7
-          tags: ${{ steps.meta-alpine.outputs.tags }}
-          labels: ${{ steps.meta-alpine.outputs.labels }}
-          build-args: |
-            TARGETPLATFORM
-          cache-from: type=gha,scope=alpine
-          cache-to: type=gha,mode=max,scope=alpine
-
-      - name: Build and push (Debian)
+      - name: Build and push
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -115,8 +90,8 @@ jobs:
           labels: ${{ steps.meta-debian.outputs.labels }}
           build-args: |
             TARGETPLATFORM
-          cache-from: type=gha,scope=debian
-          cache-to: type=gha,mode=max,scope=debian
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Trigger 1Panel container upgrade
         if: success()
