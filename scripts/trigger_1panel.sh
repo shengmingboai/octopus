@@ -33,7 +33,7 @@ echo "  Image: ${IMAGE}"
 echo "  Container: ${CONTAINER_NAME}"
 echo "  TaskID: ${TASK_ID}"
 
-RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${ONEPANEL_URL}/api/v2/upgrade/upgrade" \
+RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${ONEPANEL_URL}/api/v2/containers/upgrade" \
     -H "1Panel-Token: ${TOKEN}" \
     -H "1Panel-Timestamp: ${TIMESTAMP}" \
     -H "Content-Type: application/json" \
