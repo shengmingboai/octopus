@@ -3,23 +3,23 @@
 set -e
 
 if [ -z "$ONEPANEL_URL" ]; then
-    echo "::error::ONEPANEL_URL is not set"
-    exit 1
+    echo "ONEPANEL_URL is not set, skipping 1Panel upgrade"
+    exit 0
 fi
 
 if [ -z "$ONEPANEL_API_KEY" ]; then
-    echo "::error::ONEPANEL_API_KEY is not set"
-    exit 1
+    echo "ONEPANEL_API_KEY is not set, skipping 1Panel upgrade"
+    exit 0
 fi
 
 if [ -z "$IMAGE" ]; then
-    echo "::error::IMAGE is not set"
-    exit 1
+    echo "IMAGE is not set, skipping 1Panel upgrade"
+    exit 0
 fi
 
 if [ -z "$CONTAINER_NAME" ]; then
-    echo "::error::CONTAINER_NAME is not set"
-    exit 1
+    echo "CONTAINER_NAME is not set, skipping 1Panel upgrade"
+    exit 0
 fi
 
 TASK_ID=${TASK_ID:-"unknown"}

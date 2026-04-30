@@ -119,7 +119,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=debian
 
       - name: Trigger 1Panel container upgrade
-        if: success() && secrets.ONEPANEL_URL != ''
+        if: success()
         env:
           ONEPANEL_URL: ${{ secrets.ONEPANEL_URL }}
           ONEPANEL_API_KEY: ${{ secrets.ONEPANEL_API_KEY }}
