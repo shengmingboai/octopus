@@ -2,9 +2,7 @@ package op
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/bestruirui/octopus/internal/db"
@@ -14,7 +12,6 @@ import (
 )
 
 const dbDumpVersion = 1
-const relayLogsBatchSize = 500
 
 func DBExportAll(ctx context.Context, includeLogs, includeStats bool) (*model.DBDump, error) {
 	conn := db.GetDB().WithContext(ctx)
@@ -76,195 +73,6 @@ func DBExportAll(ctx context.Context, includeLogs, includeStats bool) (*model.DB
 	}
 
 	return d, nil
-}
-
-// DBExportToFile 流式导出数据库到文件，支持分批读取 relay_logs 和实时进度推送
-func DBExportToFile(ctx context.Context, taskID, filePath string, includeLogs, includeStats bool) error {
-	conn := db.GetDB().WithContext(ctx)
-
-	f, err := os.Create(filePath)
-	if err != nil {
-		return fmt.Errorf("create temp file: %w", err)
-	}
-	defer f.Close()
-
-	enc := json.NewEncoder(f)
-	enc.SetEscapeHTML(false)
-
-	totalTables := 7
-	if includeStats {
-		totalTables += 6
-	}
-	if includeLogs {
-		totalTables += 1
-	}
-
-	currentTable := 0
-	sendProgress := func(tableName string, rows int64) {
-		currentTable++
-		notifyExportSubscribers(taskID, model.ExportProgress{
-			Table:   tableName,
-			Current: currentTable,
-			Total:   totalTables,
-			Rows:    rows,
-			Status:  model.ExportStatusRunning,
-		})
-	}
-
-	// 写入 JSON 头部
-	if _, err := fmt.Fprintf(f, `{"version":%d,"exported_at":"%s","include_logs":%t,"include_stats":%t`,
-		dbDumpVersion, time.Now().UTC().Format(time.RFC3339), includeLogs, includeStats); err != nil {
-		return fmt.Errorf("write header: %w", err)
-	}
-
-	type tableEntry struct {
-		name string
-		fn   func() (any, int64, error)
-	}
-
-	tables := []tableEntry{
-		{"channels", exportSmallTable[[]model.Channel](conn)},
-		{"channel_keys", exportSmallTable[[]model.ChannelKey](conn)},
-		{"groups", exportSmallTable[[]model.Group](conn)},
-		{"group_items", exportSmallTable[[]model.GroupItem](conn)},
-		{"llm_infos", exportSmallTable[[]model.LLMInfo](conn)},
-		{"api_keys", exportSmallTable[[]model.APIKey](conn)},
-		{"settings", exportSmallTable[[]model.Setting](conn)},
-	}
-
-	if includeStats {
-		tables = append(tables,
-			tableEntry{"stats_total", exportSmallTable[[]model.StatsTotal](conn)},
-			tableEntry{"stats_daily", exportSmallTable[[]model.StatsDaily](conn)},
-			tableEntry{"stats_hourly", exportSmallTable[[]model.StatsHourly](conn)},
-			tableEntry{"stats_model", exportSmallTable[[]model.StatsModel](conn)},
-			tableEntry{"stats_channel", exportSmallTable[[]model.StatsChannel](conn)},
-			tableEntry{"stats_api_key", exportSmallTable[[]model.StatsAPIKey](conn)},
-		)
-	}
-
-	for _, t := range tables {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		data, rows, err := t.fn()
-		if err != nil {
-			return fmt.Errorf("export %s: %w", t.name, err)
-		}
-		if _, err := fmt.Fprintf(f, `,"%s":`, t.name); err != nil {
-			return fmt.Errorf("write %s key: %w", t.name, err)
-		}
-		if err := enc.Encode(data); err != nil {
-			return fmt.Errorf("encode %s: %w", t.name, err)
-		}
-		sendProgress(t.name, rows)
-	}
-
-	if includeLogs {
-		if err := exportRelayLogsToFile(ctx, taskID, f, enc, conn, currentTable+1, totalTables); err != nil {
-			return err
-		}
-		currentTable++
-	}
-
-	if _, err := fmt.Fprint(f, `}`); err != nil {
-		return fmt.Errorf("write footer: %w", err)
-	}
-
-	return f.Sync()
-}
-
-func exportSmallTable[T any](conn *gorm.DB) func() (any, int64, error) {
-	return func() (any, int64, error) {
-		var data T
-		result := conn.Find(&data)
-		if result.Error != nil {
-			return nil, 0, result.Error
-		}
-		return data, result.RowsAffected, nil
-	}
-}
-
-// exportRelayLogsToFile 分批游标查询 relay_logs 并流式写入文件
-// tableIndex 为 relay_logs 在总表序列中的序号（从 1 开始）
-func exportRelayLogsToFile(ctx context.Context, taskID string, f *os.File, enc *json.Encoder, conn *gorm.DB, tableIndex, totalTables int) error {
-	var totalCount int64
-	if err := conn.Model(&model.RelayLog{}).Count(&totalCount).Error; err != nil {
-		return fmt.Errorf("count relay_logs: %w", err)
-	}
-
-	if _, err := fmt.Fprint(f, `,"relay_logs":[`); err != nil {
-		return fmt.Errorf("write relay_logs key: %w", err)
-	}
-
-	if totalCount == 0 {
-		notifyExportSubscribers(taskID, model.ExportProgress{
-			Table:   "relay_logs",
-			Current: tableIndex,
-			Total:   totalTables,
-			Rows:    0,
-			Status:  model.ExportStatusRunning,
-		})
-		_, err := fmt.Fprint(f, `]`)
-		return err
-	}
-
-	var lastID int64
-	var written int64
-	first := true
-
-	for {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-
-		var batch []model.RelayLog
-		result := conn.Where("id > ?", lastID).Order("id ASC").Limit(relayLogsBatchSize).Find(&batch)
-		if result.Error != nil {
-			return fmt.Errorf("query relay_logs batch: %w", result.Error)
-		}
-		if len(batch) == 0 {
-			break
-		}
-
-		lastID = batch[len(batch)-1].ID
-		written += int64(len(batch))
-
-		for _, logEntry := range batch {
-			if !first {
-				if _, err := fmt.Fprint(f, `,`); err != nil {
-					return err
-				}
-			}
-			first = false
-			if err := enc.Encode(logEntry); err != nil {
-				return fmt.Errorf("encode relay_log: %w", err)
-			}
-		}
-
-		notifyExportSubscribers(taskID, model.ExportProgress{
-			Table:   "relay_logs",
-			Current: tableIndex,
-			Total:   totalTables,
-			Rows:    written,
-			Status:  model.ExportStatusRunning,
-		})
-
-		if len(batch) < relayLogsBatchSize {
-			break
-		}
-	}
-
-	notifyExportSubscribers(taskID, model.ExportProgress{
-		Table:   "relay_logs",
-		Current: tableIndex,
-		Total:   totalTables,
-		Rows:    written,
-		Status:  model.ExportStatusRunning,
-	})
-
-	_, err := fmt.Fprint(f, `]`)
-	return err
 }
 
 func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImportResult, error) {
