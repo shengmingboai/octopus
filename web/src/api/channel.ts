@@ -35,6 +35,7 @@ export type ChannelGrant = {
     model_name: string;
     key_name: string;
     protocols: number; // Protocol 位掩码。
+    missing: boolean; // 该授权是否已从上游消失。
 };
 
 // ChannelGrantCandidate 是分组页可选取的一条授权，字段与 GroupItem 的展示字段一一对应。
@@ -47,6 +48,7 @@ export type ChannelGrantCandidate = {
     model_name: string;
     key_name: string;
     protocols: number; // Protocol 位掩码。
+    missing: boolean; // 授权是否已从上游消失。
     available: boolean;
 };
 
@@ -73,6 +75,8 @@ export type ChannelDetail = {
     param_override: string;
     channel_proxy: string;
     match_regex: string;
+    auto_sync_models: boolean; // 是否按同步周期自动与上游同步模型列表。
+    auto_group: boolean; // 同步新引入的模型是否自动加入同名分组。
 };
 
 // ChannelModelStats 是单个渠道模型的累计统计，自带名称。
@@ -124,6 +128,14 @@ type FetchModelRequest = {
 export type FetchModel = {
     name: string;
     protocols: number; // Protocol 位掩码。
+};
+
+// SyncAllResult 是一次全渠道模型同步的汇总摘要，供设置页提示本次同步做了什么。
+export type SyncAllResult = {
+    added_models: number;
+    missing_grants: number; // 本轮标记为上游消失的授权条数。
+    restored_grants: number; // 本轮从上游消失恢复的授权条数。
+    failed_channels: number; // 同步失败的渠道数，失败明细在服务端日志。
 };
 
 // channelGrantListQueryOptions 供分组页查询可选授权。
@@ -295,5 +307,42 @@ export function useFetchModel() {
     return useMutation({
         mutationFn: (data: FetchModelRequest) =>
             apiRequest<FetchModel[]>('/api/v1/channel/fetch-model', { method: 'POST', body: data }),
+    });
+}
+
+/**
+ * 立即同步全部开启了自动同步的渠道 Hook，供设置页手动同步使用。
+ * 探测成功且列表里没有的授权标记为上游消失（分组里以禁用样式展示，协议位保留），
+ * 恢复的授权按原协议复活，新模型按探测协议自动建授权。
+ *
+ * @example
+ * const syncAllChannels = useSyncAllChannels();
+ * syncAllChannels.mutate(undefined, { onSuccess: (result) => ... });
+ */
+export function useSyncAllChannels() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: () =>
+            apiRequest<SyncAllResult>('/api/v1/channel/sync-all', { method: 'POST', body: {} }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['channels'] });
+            queryClient.invalidateQueries({ queryKey: modelListQueryOptions.queryKey });
+            queryClient.invalidateQueries({ queryKey: groupListQueryOptions.queryKey });
+        },
+    });
+}
+
+/**
+ * 获取最近一次模型同步完成时间 Hook，供设置页展示；从未同步时为空串。
+ *
+ * @example
+ * const { data: lastSyncTime } = useLastSyncTime();
+ */
+export function useLastSyncTime() {
+    return useQuery({
+        queryKey: ['channels', 'last-sync-time'],
+        queryFn: () => apiRequest<string>('/api/v1/channel/last-sync-time'),
+        refetchOnMount: 'always',
     });
 }

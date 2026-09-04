@@ -7,6 +7,7 @@ import (
 	"github.com/bestruirui/octopus/internal/model"
 	"github.com/bestruirui/octopus/internal/op"
 	"github.com/bestruirui/octopus/internal/price"
+	"github.com/bestruirui/octopus/internal/probe"
 	"github.com/charmbracelet/log"
 )
 
@@ -38,4 +39,22 @@ func Init() {
 	}
 	statsSaveInterval := time.Duration(statsSaveIntervalMinutes) * time.Minute
 	Register(TaskStatsSave, statsSaveInterval, false, op.StatsSaveDBTask)
+
+	// 注册渠道模型同步任务: 逐个同步开启了自动同步的渠道, 单个渠道失败不影响其余渠道。
+	syncIntervalHours, err := op.SettingGetInt(model.SettingKeySyncModelsInterval)
+	if err != nil {
+		log.Warnf("failed to get sync models interval: %v", err)
+		return
+	}
+	syncInterval := time.Duration(syncIntervalHours) * time.Hour
+	Register(string(model.SettingKeySyncModelsInterval), syncInterval, true, func() {
+		summary, failed, err := probe.SyncAllChannels(context.Background())
+		if err != nil {
+			log.Warnf("failed to sync channel models: %v", err)
+		}
+		if summary.AddedModels > 0 || summary.MissingGrants > 0 || summary.RestoredGrants > 0 {
+			log.Infof("channel models synced: added %d, missing %d, restored %d, failed channels %d",
+				summary.AddedModels, summary.MissingGrants, summary.RestoredGrants, failed)
+		}
+	})
 }

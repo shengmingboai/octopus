@@ -104,7 +104,8 @@ func ChannelUpdate(detail *model.ChannelDetail, ctx context.Context) (*model.Cha
 		if err := tx.Model(&model.Channel{}).Where("id = ?", detail.ID).
 			Select("name", "dialect", "enabled", "base_url",
 				"openai_chat_completion_path", "openai_response_path", "anthropic_message_path",
-				"proxy", "channel_proxy", "custom_header", "param_override", "match_regex").
+				"proxy", "channel_proxy", "custom_header", "param_override", "match_regex",
+				"auto_sync_models", "auto_group").
 			Updates(&model.Channel{ChannelConfig: detail.ChannelConfig}).Error; err != nil {
 			return fmt.Errorf("failed to update channel: %w", err)
 		}
@@ -286,12 +287,15 @@ func ChannelGet(id int) (model.Channel, error) {
 }
 
 // ChannelGrantGet 返回可用于转发的渠道授权, 并补齐其模型与凭据。
-// 凭据被停用, 以及模型, 凭据缺失时一律返回错误, 使调用方拿到的授权必然可直接转发, 无需再逐项检查。
+// 凭据被停用, 授权已被上游下架, 以及模型, 凭据缺失时一律返回错误, 使调用方拿到的授权必然可直接转发, 无需再逐项检查。
 // 授权本身没有停用状态: 不再授权就删掉该组合, 无需保留一行停用记录。
 func ChannelGrantGet(id int) (model.ChannelGrant, error) {
 	grant, ok := channelGrantCache.Get(id)
 	if !ok {
 		return model.ChannelGrant{}, fmt.Errorf("channel grant not found")
+	}
+	if grant.Missing {
+		return model.ChannelGrant{}, fmt.Errorf("channel grant %d is missing upstream", grant.ID)
 	}
 	channelModel, ok := channelModelCache.Get(grant.ChannelModelID)
 	if !ok {
@@ -331,6 +335,7 @@ func ChannelGrantCandidates() []model.ChannelGrantCandidate {
 			ModelName:   channelModel.Name,
 			KeyName:     channelKey.Name,
 			Protocols:   grant.Protocols,
+			Missing:     grant.Missing,
 			Available:   channel.Enabled && channelKey.Enabled,
 		})
 	}
@@ -492,7 +497,7 @@ func channelDetail(channel model.Channel) model.ChannelDetail {
 		if !ok {
 			continue
 		}
-		grants = append(grants, model.ChannelGrantConfig{ModelName: modelName, KeyName: keyName, Protocols: grant.Protocols})
+		grants = append(grants, model.ChannelGrantConfig{ModelName: modelName, KeyName: keyName, Protocols: grant.Protocols, Missing: grant.Missing})
 	}
 	sort.Slice(grants, func(i, j int) bool {
 		if grants[i].ModelName != grants[j].ModelName {
@@ -646,9 +651,9 @@ func syncChannelGrants(tx *gorm.DB, channelID int, requested []model.ChannelGran
 		}
 		key := grantKey{modelID, keyID}
 		if current, ok := existingByKey[key]; ok {
-			if current.Protocols != requestedGrant.Protocols {
+			if current.Protocols != requestedGrant.Protocols || current.Missing != requestedGrant.Missing {
 				if err := tx.Model(&model.ChannelGrant{}).Where("id = ?", current.ID).
-					Update("protocols", requestedGrant.Protocols).Error; err != nil {
+					Updates(map[string]any{"protocols": requestedGrant.Protocols, "missing": requestedGrant.Missing}).Error; err != nil {
 					return fmt.Errorf("failed to update channel grant: %w", err)
 				}
 			}

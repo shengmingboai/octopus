@@ -153,6 +153,22 @@
             "label": "统计保存周期（分钟）",
             "placeholder": "请输入周期（分钟）"
         },
+        "llmSync": {
+            "title": "渠道同步",
+            "syncInterval": {
+                "label": "自动同步间隔（小时）",
+                "placeholder": "请输入间隔（小时）"
+            },
+            "manualSync": {
+                "label": "手动同步渠道",
+                "button": "立即同步",
+                "syncing": "同步中..."
+            },
+            "lastSync": "上次同步",
+            "neverSynced": "从未同步",
+            "syncSuccess": "同步完成：新增 {models} 个模型，标记下架 {missing} 条授权，恢复 {restored} 条",
+            "syncFailed": "渠道同步失败"
+        },
         "corsAllowOrigins": {
             "label": "CORS 跨域白名单",
             "hint": "为空禁止跨域，* 允许所有",
@@ -344,6 +360,7 @@
             "items": "成员顺序",
             "addItem": "添加模型",
             "autoAdd": "自动添加",
+            "memberMissing": "上游已下架",
             "clear": "清空"
         }
     },
@@ -451,6 +468,8 @@
             "apiKey": "API Key",
             "enabled": "启用",
             "proxy": "使用代理",
+            "autoSyncModels": "自动同步",
+            "autoGroup": "自动分组",
             "keys": "凭据",
             "keyAdd": "添加凭据",
             "keyName": "名称",
@@ -467,6 +486,7 @@
             "modelRefreshSuccess": "已拉取 {count} 个模型",
             "modelRefreshFailed": "拉取失败",
             "modelRefreshEmpty": "未获取到模型",
+            "modelMissing": "上游已下架",
             "channelProxy": "渠道代理",
             "matchRegex": "匹配正则",
             "paramOverride": "参数覆盖",

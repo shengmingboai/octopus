@@ -36,12 +36,15 @@ export function useModelProbe() {
             }
             const models = [...state.models];
             const grants = new Map(state.grants);
+            const missingGrants = new Set(state.missingGrants);
             for (const { name, protocols } of fetched) {
                 if (!models.includes(name)) models.push(name);
                 const mapKey = grantKey(name, channelKey.name);
                 grants.set(mapKey, (grants.get(mapKey) ?? 0) | protocols);
+                // 探测到即上游仍有该模型, 手动刷新是显式确认, 消失标记随之解除。
+                missingGrants.delete(mapKey);
             }
-            setState({ ...state, models, grants });
+            setState({ ...state, models, grants, missingGrants });
             toast.success(t('modelRefreshSuccess', { count: fetched.length }));
         } catch (error) {
             toast.error(t('modelRefreshFailed'), { description: String(error) });

@@ -153,6 +153,22 @@
             "label": "Stats Save Interval",
             "placeholder": "Enter interval in minutes"
         },
+        "llmSync": {
+            "title": "Channel Sync",
+            "syncInterval": {
+                "label": "Auto Sync Interval (hours)",
+                "placeholder": "Enter interval in hours"
+            },
+            "manualSync": {
+                "label": "Manual Channel Sync",
+                "button": "Sync Now",
+                "syncing": "Syncing..."
+            },
+            "lastSync": "Last sync",
+            "neverSynced": "Never synced",
+            "syncSuccess": "Synced: {models} models added, {missing} grants marked missing, {restored} restored",
+            "syncFailed": "Channel sync failed"
+        },
         "corsAllowOrigins": {
             "label": "CORS Allowed Origins",
             "hint": "Empty = deny all, * = allow all",
@@ -344,6 +360,7 @@
             "items": "Member Order",
             "addItem": "Add Model",
             "autoAdd": "Auto Add",
+            "memberMissing": "Removed upstream",
             "clear": "Clear"
         }
     },
@@ -451,6 +468,8 @@
             "apiKey": "API Key",
             "enabled": "Enabled",
             "proxy": "Use proxy",
+            "autoSyncModels": "Auto-sync",
+            "autoGroup": "Auto grouping",
             "keys": "Credentials",
             "keyAdd": "Add credential",
             "keyName": "Name",
@@ -467,6 +486,7 @@
             "modelRefreshSuccess": "Fetched {count} models",
             "modelRefreshFailed": "Fetch failed",
             "modelRefreshEmpty": "No models returned",
+            "modelMissing": "Removed upstream",
             "channelProxy": "Channel proxy",
             "matchRegex": "Match regex",
             "paramOverride": "Param override",

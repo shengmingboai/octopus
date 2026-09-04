@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/select';
 import { IconButton } from '@/components/common/IconButton';
 import { useModelProbe } from './probe';
-import { grantKey, type ChannelFormState } from './state';
+import { grantKey, withGrants, type ChannelFormState } from './state';
 
 // GrantCells 渲染一行右侧固定的四格: chat, response, message 三个协议勾选和一个删除。
 // 表头, 模型行, 凭据子行的差别只是这一行覆盖的 (模型 × 凭据) 范围与删除动作, 勾选,
@@ -55,7 +55,7 @@ function GrantCells({ state, setState, models, keyNames, remove, icon: Icon, tip
                                 else grants.set(mapKey, protocols);
                             }
                         }
-                        setState({ ...state, grants });
+                        setState(withGrants(state, grants));
                     }}
                 />
             </span>
@@ -104,13 +104,13 @@ export function FormGrants({ state, setState }: {
     const removeGrant = (modelName: string, keyName: string) => {
         const grants = new Map(state.grants);
         grants.delete(grantKey(modelName, keyName));
-        setState({ ...state, grants });
+        setState(withGrants(state, grants));
     };
 
     const removeModel = (modelName: string) => {
         const grants = new Map(state.grants);
         for (const keyName of keyNames) grants.delete(grantKey(modelName, keyName));
-        setState({ ...state, models: state.models.filter((m) => m !== modelName), grants });
+        setState({ ...withGrants(state, grants), models: state.models.filter((m) => m !== modelName) });
     };
 
     // 自定义模型直接授权给当前选中的凭据, 协议位沿用该凭据在其他模型上已有的并集。
@@ -125,7 +125,7 @@ export function FormGrants({ state, setState }: {
         }
         const grants = new Map(state.grants);
         if (activeKey) grants.set(grantKey(name, activeKey), protocols || Protocol.OpenAIResponse);
-        setState({ ...state, models: [...state.models, name], grants });
+        setState({ ...withGrants(state, grants), models: [...state.models, name] });
         setAdding('');
     };
 
@@ -191,7 +191,7 @@ export function FormGrants({ state, setState }: {
                     <GrantCells
                         state={state} setState={setState}
                         models={state.models} keyNames={keyNames}
-                        remove={() => setState({ ...state, models: [], grants: new Map() })}
+                        remove={() => setState({ ...withGrants(state, new Map()), models: [] })}
                         icon={Eraser}
                         tip={t('grantClearAll')}
                     />
@@ -205,8 +205,14 @@ export function FormGrants({ state, setState }: {
                         const granted = keyNames.filter(
                             (keyName) => (state.grants.get(grantKey(modelName, keyName)) ?? 0) !== 0
                         ).length;
+                        // 全部已存在授权都标记消失时, 该模型已从上游下架: 置灰提示但保留条目,
+                        // 否则全量提交会把它当作用户删除而真删, 协议与分组项都会跟着丢。
+                        const existingGrantKeys = keyNames
+                            .map((keyName) => grantKey(modelName, keyName))
+                            .filter((mapKey) => (state.grants.get(mapKey) ?? 0) !== 0);
+                        const isMissing = existingGrantKeys.length > 0 && existingGrantKeys.every((mapKey) => state.missingGrants.has(mapKey));
                         return (
-                            <div key={modelName} className="border-b border-border last:border-0">
+                            <div key={modelName} className={`border-b border-border last:border-0 ${isMissing ? 'opacity-60 grayscale' : ''}`}>
                                 <div className="flex items-center gap-1 px-3 py-2">
                                     <button
                                         type="button"
@@ -219,6 +225,11 @@ export function FormGrants({ state, setState }: {
                                     >
                                         <ChevronRight className={`size-3.5 shrink-0 text-muted-foreground transition-transform ${isOpen ? 'rotate-90' : ''}`} />
                                         <span className="text-sm truncate">{modelName}</span>
+                                        {isMissing && (
+                                            <span className="shrink-0 rounded border border-destructive/40 px-1 text-[10px] leading-4 text-destructive">
+                                                {t('modelMissing')}
+                                            </span>
+                                        )}
                                         <span className="text-xs text-muted-foreground tabular-nums shrink-0">
                                             {granted}/{keyNames.length}
                                         </span>
@@ -234,13 +245,20 @@ export function FormGrants({ state, setState }: {
 
                                 {/* 未授权的凭据也要列出, 否则没有入口给它打勾; 压暗以区分于已授权的凭据。 */}
                                 {isOpen && state.keys.map((channelKey) => {
-                                    const protocols = state.grants.get(grantKey(modelName, channelKey.name)) ?? 0;
+                                    const mapKey = grantKey(modelName, channelKey.name);
+                                    const protocols = state.grants.get(mapKey) ?? 0;
+                                    const grantMissing = protocols !== 0 && state.missingGrants.has(mapKey);
                                     return (
                                         <div
                                             key={channelKey.name}
                                             className={`flex items-center gap-1 pl-9 pr-3 py-1.5 bg-muted/20 ${protocols === 0 ? 'opacity-45' : ''}`}
                                         >
-                                            <span className="flex-1 text-xs text-muted-foreground truncate">{channelKey.name}</span>
+                                            <span className="flex-1 text-xs text-muted-foreground truncate">
+                                                {channelKey.name}
+                                                {grantMissing && (
+                                                    <span className="ml-1.5 text-[10px] text-destructive">{t('modelMissing')}</span>
+                                                )}
+                                            </span>
                                             <GrantCells
                                                 state={state} setState={setState}
                                                 models={[modelName]} keyNames={[channelKey.name]}

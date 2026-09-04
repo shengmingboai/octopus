@@ -199,15 +199,20 @@ function ModelPickerSection({
                                                                 <button
                                                                     key={memberKey(m)}
                                                                     type="button"
-                                                                    onClick={() => !isSelected && onAdd(m)}
-                                                                    disabled={isSelected}
+                                                                    onClick={() => !isSelected && !m.missing && onAdd(m)}
+                                                                    disabled={isSelected || m.missing}
                                                                     className={cn(
                                                                         'flex w-full items-center justify-between gap-2 px-2.5 py-1.5 pl-8 text-left transition-colors',
-                                                                        isSelected ? 'opacity-60 cursor-not-allowed' : 'hover:bg-muted'
+                                                                        (isSelected || m.missing) ? 'opacity-60 cursor-not-allowed' : 'hover:bg-muted'
                                                                     )}
                                                                 >
                                                                     <span className="flex min-w-0 items-center gap-2">
                                                                         <span className="truncate text-xs text-muted-foreground">{m.key_name}</span>
+                                                                        {m.missing && (
+                                                                            <span className="shrink-0 rounded border border-destructive/40 px-1 text-[10px] leading-4 text-destructive">
+                                                                                {t('form.memberMissing')}
+                                                                            </span>
+                                                                        )}
                                                                         {/* 标出该凭据讲得通的协议: 同一模型的不同凭据可能只支持其中一部分, 选之前就要能看出来。 */}
                                                                         {PROTOCOL_TAGS.map(({ bit, label }) => (m.protocols & bit) !== 0 && (
                                                                             <span
@@ -324,7 +329,8 @@ export function GroupEditor({
         id: String(grant.id),
         channel_grant_id: grant.id,
         name: grant.model_name,
-        enabled: grant.available,
+        enabled: grant.available && !grant.missing,
+        missing: grant.missing,
         channel_id: grant.channel_id,
         channel_name: grant.channel_name,
         key_name: grant.key_name,

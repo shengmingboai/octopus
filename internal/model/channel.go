@@ -38,11 +38,13 @@ type ChannelConfig struct {
 	CustomHeader             []CustomHeader `json:"custom_header" gorm:"serializer:json"`                                                               // 追加到上游请求的 Header。
 	ParamOverride            string         `json:"param_override"`                                                                                     // 请求参数覆盖配置; 留空表示不覆盖。
 	MatchRegex               string         `json:"match_regex"`                                                                                        // 拉取模型列表时的过滤表达式; 留空表示不过滤。
+	AutoSyncModels           bool           `json:"auto_sync_models" gorm:"default:false"`                                                              // 是否按同步周期自动与上游同步模型列表。
+	AutoGroup                bool           `json:"auto_group" gorm:"default:false"`                                                                    // 同步新引入的模型是否自动加入同名分组; 分组名与模型名忽略大小写精确一致才入组, 模型名带供应商前缀时按最后一个 / 之后的尾段比对。
 }
 
 // 单个上游渠道的共享配置; 路径按协议分别配置, 凭据由 ChannelKey 提供。
 type Channel struct {
-	ID            int            `json:"id" gorm:"primaryKey"`                                      // 渠道主键。
+	ID            int            `json:"id" gorm:"primaryKey"` // 渠道主键。
 	ChannelConfig                // 可编辑配置, 平铺为 channels 的各列。
 	Keys          []ChannelKey   `json:"-" gorm:"foreignKey:ChannelID;constraint:OnDelete:CASCADE"` // 渠道下的上游凭据; 不出 JSON, 读取走 ChannelDetail。
 	Models        []ChannelModel `json:"-" gorm:"foreignKey:ChannelID;constraint:OnDelete:CASCADE"` // 渠道提供的模型; 不出 JSON, 读取走 ChannelDetail。
@@ -82,6 +84,7 @@ type ChannelGrant struct {
 	ChannelKeyID   int           `json:"channel_key_id" gorm:"not null;index:idx_channel_grant,unique"`                                      // 凭据 ID。
 	ChannelKey     *ChannelKey   `json:"channel_key,omitempty" gorm:"foreignKey:ChannelKeyID;references:ID;constraint:OnDelete:CASCADE"`     // 授权引用的凭据。
 	Protocols      Protocol      `json:"protocols" gorm:"not null"`                                                                          // 该组合支持的协议位掩码。
+	Missing        bool          `json:"missing" gorm:"not null;default:false"`                                                              // 该组合是否已从上游消失; 消失只是标记, 协议位原样保留, 上游恢复后按原协议复活。
 }
 
 // 渠道读写副本: 编辑表单的完整形状, 读取与提交同构。
@@ -89,7 +92,7 @@ type ChannelGrant struct {
 // 凭据与模型只给界面用得上的字段: 两者在渠道内按名称唯一, 提交时也按名称引用, 主键与统计都无从使用。
 // 集合字段恒为数组, 读取侧承诺不为 null。
 type ChannelDetail struct {
-	ID            int                  `json:"id"`     // 渠道主键; 创建时提交 0, 由数据库分配。
+	ID            int                  `json:"id"` // 渠道主键; 创建时提交 0, 由数据库分配。
 	ChannelConfig                      // 渠道自身的可编辑配置。
 	Keys          []ChannelKeyConfig   `json:"keys"`   // 渠道下的上游凭据。
 	Models        []string             `json:"models"` // 渠道提供的上游模型名称。
@@ -103,6 +106,7 @@ type ChannelGrantConfig struct {
 	ModelName string   `json:"model_name"` // 渠道模型名称。
 	KeyName   string   `json:"key_name"`   // 渠道凭据名称。
 	Protocols Protocol `json:"protocols"`  // 该组合支持的协议位掩码。
+	Missing   bool     `json:"missing"`    // 该组合是否已从上游消失。
 }
 
 // 渠道及其模型的累计统计, 自带展示所需的名称与启停状态。
@@ -134,6 +138,7 @@ type ChannelGrantCandidate struct {
 	ModelName   string   `json:"model_name"`   // 授权引用的上游模型名称。
 	KeyName     string   `json:"key_name"`     // 授权引用的凭据名称。
 	Protocols   Protocol `json:"protocols"`    // 授权支持的协议位掩码。
+	Missing     bool     `json:"missing"`      // 授权是否已从上游消失。
 	Available   bool     `json:"available"`    // 渠道与凭据均启用且模型, 凭据均存在时为真。
 }
 
@@ -156,4 +161,12 @@ type ChannelFetchModelRequest struct {
 type ChannelFetchModel struct {
 	Name      string   `json:"name"`      // 上游模型名称。
 	Protocols Protocol `json:"protocols"` // 由探测结果得出的协议位掩码。
+}
+
+// 一次模型同步的结果摘要, 供界面提示同步造成了哪些变化。
+type ChannelSyncResult struct {
+	AddedModels    int      `json:"added_models"`     // 新引入的上游模型个数。
+	AddedModelName []string `json:"added_model_name"` // 新引入的上游模型名称, 供补齐价格记录。
+	MissingGrants  int      `json:"missing_grants"`   // 本轮标记为上游消失的授权条数。
+	RestoredGrants int      `json:"restored_grants"`  // 本轮从上游消失恢复的授权条数。
 }

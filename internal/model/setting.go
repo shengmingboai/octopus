@@ -13,6 +13,8 @@ const (
 	SettingKeyStatsSaveInterval       SettingKey = "stats_save_interval"        // 将统计信息写入数据库的周期(分钟)
 	SettingKeyModelInfoUpdateInterval SettingKey = "model_info_update_interval" // 模型信息更新间隔(小时)
 	SettingKeyCORSAllowOrigins        SettingKey = "cors_allow_origins"         // 跨域白名单(逗号分隔, 如 "example.com,example2.com"). 为空不允许跨域, "*"允许所有
+	SettingKeySyncModelsInterval      SettingKey = "sync_models_interval"       // 渠道模型自动同步间隔(小时), 0 表示关闭
+	SettingKeySyncModelsLastSync      SettingKey = "sync_models_last_sync"      // 最近一次模型同步完成的 Unix 秒; 仅供界面展示, 不在设置页编辑
 )
 
 type Setting struct {
@@ -26,6 +28,8 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyStatsSaveInterval, Value: "10"},       // 默认10分钟保存一次统计信息
 		{Key: SettingKeyCORSAllowOrigins, Value: ""},          // CORS 默认不允许跨域，设置为 "*" 才允许所有来源
 		{Key: SettingKeyModelInfoUpdateInterval, Value: "24"}, // 默认24小时更新一次模型信息
+		{Key: SettingKeySyncModelsInterval, Value: "24"},      // 默认24小时同步一次渠道模型
+		{Key: SettingKeySyncModelsLastSync, Value: ""},        // 最近一次模型同步完成时间, 由同步流程写入
 	}
 }
 
@@ -35,6 +39,12 @@ func (s *Setting) Validate() error {
 		_, err := strconv.Atoi(s.Value)
 		if err != nil {
 			return fmt.Errorf("model info update interval must be an integer")
+		}
+		return nil
+	case SettingKeySyncModelsInterval:
+		_, err := strconv.Atoi(s.Value)
+		if err != nil {
+			return fmt.Errorf("sync models interval must be an integer")
 		}
 		return nil
 	case SettingKeyProxyURL:

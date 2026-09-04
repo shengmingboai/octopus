@@ -20,6 +20,7 @@ export interface SelectedMember {
     channel_grant_id: number;
     name: string;
     enabled: boolean;
+    missing?: boolean;
     channel_id: number;
     channel_name: string;
     key_name: string;
@@ -136,6 +137,7 @@ function MemberItem({
                     </Tooltip>
                     <span className="text-[10px] text-muted-foreground truncate leading-tight">
                         {member.key_name ? `${member.channel_name} · ${member.key_name}` : member.channel_name}
+                        {member.missing && <span className="ml-1 text-destructive">{t('form.memberMissing')}</span>}
                     </span>
                 </div>
 

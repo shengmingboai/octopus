@@ -14,10 +14,13 @@ export type ChannelFormState = {
     keys: { name: string; key: string; enabled: boolean }[];
     models: string[];
     grants: Map<string, number>; // 键为 grantKey(模型名, 凭据名), 值为 Protocol 位掩码。
+    missingGrants: Set<string>; // 已从上游消失的授权。
     custom_header: ChannelDetail['custom_header'];
     channel_proxy: string;
     param_override: string;
     match_regex: string;
+    auto_sync_models: boolean;
+    auto_group: boolean;
 };
 
 // grantKey 生成授权在状态里的键; 分隔符取 \0, 模型名与凭据名都不会含它。
@@ -37,10 +40,13 @@ export const emptyFormState: ChannelFormState = {
     keys: [],
     models: [],
     grants: new Map(),
+    missingGrants: new Set(),
     custom_header: [],
     channel_proxy: '',
     param_override: '',
     match_regex: '',
+    auto_sync_models: false,
+    auto_group: false,
 };
 
 // fromChannel 把渠道完整配置还原为表单状态; 授权读写都按名称, 直接建索引即可。
@@ -57,10 +63,23 @@ export function fromChannel(channel: ChannelDetail): ChannelFormState {
         keys: channel.keys.map(({ name, key, enabled }) => ({ name, key, enabled })),
         models: [...channel.models],
         grants: new Map(channel.grants.map((g) => [grantKey(g.model_name, g.key_name), g.protocols])),
+        missingGrants: new Set(channel.grants.filter((g) => g.missing).map((g) => grantKey(g.model_name, g.key_name))),
         custom_header: channel.custom_header,
         channel_proxy: channel.channel_proxy,
         param_override: channel.param_override,
         match_regex: channel.match_regex,
+        auto_sync_models: channel.auto_sync_models,
+        auto_group: channel.auto_group,
+    };
+}
+
+// withGrants 返回替换授权表后的状态; 消失标记只在授权仍存在时保留, 协议位清空即授权删除。
+// 授权的增删改有多处入口, 消失标记的清理集中在此, 各入口不会漏删残留的键。
+export function withGrants(state: ChannelFormState, grants: Map<string, number>): ChannelFormState {
+    return {
+        ...state,
+        grants,
+        missingGrants: new Set([...state.missingGrants].filter((mapKey) => grants.has(mapKey))),
     };
 }
 
@@ -80,12 +99,14 @@ export function toChannelConfig(state: ChannelFormState) {
         channel_proxy: state.channel_proxy.trim(),
         param_override: state.param_override.trim(),
         match_regex: state.match_regex.trim(),
+        auto_sync_models: state.auto_sync_models,
+        auto_group: state.auto_group,
     };
 }
 
 // toChannelDetail 把表单状态还原为提交用的完整配置; 创建时 id 取 0, 由后端分配。
 // 读写同构, 提交即全量: 无需与原渠道逐字段比对, 表单本就一次给出完整配置。
-// 协议位为空的条目不是授权, 在此丢弃。
+// 协议位为空的条目不是授权, 在此丢弃; 消失的授权协议位仍在, 原样带回才不会被当作已删除。
 export function toChannelDetail(state: ChannelFormState, id: number): ChannelDetail {
     return {
         ...toChannelConfig(state),
@@ -96,7 +117,7 @@ export function toChannelDetail(state: ChannelFormState, id: number): ChannelDet
             .filter(([, protocols]) => protocols !== 0)
             .map(([mapKey, protocols]) => {
                 const [model_name, key_name] = mapKey.split('\0');
-                return { model_name, key_name, protocols };
+                return { model_name, key_name, protocols, missing: state.missingGrants.has(mapKey) };
             }),
     };
 }

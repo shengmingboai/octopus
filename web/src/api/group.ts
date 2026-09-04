@@ -29,6 +29,7 @@ export interface GroupItem {
     model_name: string;
     key_name: string;
     protocols: number; // 该授权支持的 Protocol 位掩码。
+    missing: boolean; // 该授权是否已从上游消失。
     available: boolean; // 为假表示该成员当前无法转发，但仍会列出以便移除。
 }
 
