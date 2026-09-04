@@ -1,0 +1,2 @@
+# Shell 脚本必须使用 LF，否则在 Linux CI 上 bash 会把 \r 当作命令的一部分
+*.sh text eol=lf
