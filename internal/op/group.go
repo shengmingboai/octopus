@@ -276,6 +276,7 @@ func groupSnapshot(group model.Group) model.Group {
 			continue
 		}
 		group.Items[i].Protocols = grant.Protocols
+		group.Items[i].Missing = grant.Missing
 		channelModel, modelOK := channelModelCache.Get(grant.ChannelModelID)
 		channelKey, keyOK := channelKeyCache.Get(grant.ChannelKeyID)
 		if !modelOK || !keyOK {

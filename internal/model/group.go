@@ -82,6 +82,7 @@ type GroupItem struct {
 	ModelName   string   `json:"model_name" gorm:"-"`   // 授权引用的上游模型名称。
 	KeyName     string   `json:"key_name" gorm:"-"`     // 授权引用的凭据名称。
 	Protocols   Protocol `json:"protocols" gorm:"-"`    // 授权支持的协议位掩码。
+	Missing     bool     `json:"missing" gorm:"-"`      // 授权是否已从上游消失; 分组页据此以禁用样式展示并说明原因。
 	Available   bool     `json:"available" gorm:"-"`    // 渠道与凭据均启用且模型, 凭据均存在时为真; 为假表示该成员当前无法转发, 但仍需列出以便移除。
 }
 
