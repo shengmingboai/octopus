@@ -4,14 +4,14 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/bestruirui/octopus/internal/model"
-	"github.com/bestruirui/octopus/internal/op"
-	"github.com/bestruirui/octopus/internal/price"
-	"github.com/bestruirui/octopus/internal/server/middleware"
-	"github.com/bestruirui/octopus/internal/server/resp"
-	"github.com/bestruirui/octopus/internal/server/router"
 	"github.com/gin-gonic/gin"
 	"github.com/samber/lo"
+	"github.com/shengmingboai/octopus/internal/model"
+	"github.com/shengmingboai/octopus/internal/op"
+	"github.com/shengmingboai/octopus/internal/price"
+	"github.com/shengmingboai/octopus/internal/server/middleware"
+	"github.com/shengmingboai/octopus/internal/server/resp"
+	"github.com/shengmingboai/octopus/internal/server/router"
 )
 
 func init() {

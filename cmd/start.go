@@ -1,13 +1,13 @@
 package cmd
 
 import (
-	"github.com/bestruirui/octopus/internal/conf"
-	"github.com/bestruirui/octopus/internal/db"
-	"github.com/bestruirui/octopus/internal/op"
-	"github.com/bestruirui/octopus/internal/server"
-	"github.com/bestruirui/octopus/internal/task"
-	"github.com/bestruirui/octopus/internal/utils/shutdown"
 	"github.com/charmbracelet/log"
+	"github.com/shengmingboai/octopus/internal/conf"
+	"github.com/shengmingboai/octopus/internal/db"
+	"github.com/shengmingboai/octopus/internal/op"
+	"github.com/shengmingboai/octopus/internal/server"
+	"github.com/shengmingboai/octopus/internal/task"
+	"github.com/shengmingboai/octopus/internal/utils/shutdown"
 	"github.com/spf13/cobra"
 )
 

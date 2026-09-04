@@ -39,14 +39,14 @@ docker run -d --name octopus -v /path/to/data:/app/data -p 8080:8080 bestrui/oct
 Or use docker compose:
 
 ```bash
-wget https://raw.githubusercontent.com/bestruirui/octopus/refs/heads/master/docker-compose.yml
+wget https://raw.githubusercontent.com/shengmingboai/octopus/refs/heads/master/docker-compose.yml
 docker compose up -d
 ```
 
 
 ### 📦 Download from Release
 
-Download the binary for your platform from [Releases](https://github.com/bestruirui/octopus/releases), then run:
+Download the binary for your platform from [Releases](https://github.com/shengmingboai/octopus/releases), then run:
 
 ```bash
 ./octopus start
@@ -61,7 +61,7 @@ Download the binary for your platform from [Releases](https://github.com/bestrui
 
 ```bash
 # Clone the repository
-git clone https://github.com/bestruirui/octopus.git
+git clone https://github.com/shengmingboai/octopus.git
 cd octopus
 # Build frontend
 cd web && pnpm install && pnpm run build
@@ -366,5 +366,5 @@ Edit `~/.codex/auth.json`
 
 - 🙏 [looplj/axonhub](https://github.com/looplj/axonhub) - The LLM API adaptation module in this project is directly derived from this repository
 - 📊 [sst/models.dev](https://github.com/sst/models.dev) - AI model database providing model pricing data
-- 🇨🇳 [AtomGit](https://atomgit.com/bestruirui/octopus) - China-based code hosting
+- 🇨🇳 [AtomGit](https://atomgit.com/shengmingboai/octopus) - China-based code hosting
 - 💬 [Linux.do](https://linux.do/)

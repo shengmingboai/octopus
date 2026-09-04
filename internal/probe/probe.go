@@ -16,12 +16,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/model"
-	"github.com/bestruirui/octopus/internal/op"
-	"github.com/bestruirui/octopus/internal/price"
-	"github.com/bestruirui/octopus/internal/rhttp"
 	"github.com/charmbracelet/log"
 	"github.com/dlclark/regexp2"
+	"github.com/shengmingboai/octopus/internal/model"
+	"github.com/shengmingboai/octopus/internal/op"
+	"github.com/shengmingboai/octopus/internal/price"
+	"github.com/shengmingboai/octopus/internal/rhttp"
 )
 
 // HTTPClient 按渠道配置构建探测用的 HTTP 客户端。

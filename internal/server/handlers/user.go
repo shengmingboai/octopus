@@ -3,13 +3,13 @@ package handlers
 import (
 	"net/http"
 
-	"github.com/bestruirui/octopus/internal/model"
-	"github.com/bestruirui/octopus/internal/op"
-	"github.com/bestruirui/octopus/internal/server/auth"
-	"github.com/bestruirui/octopus/internal/server/middleware"
-	"github.com/bestruirui/octopus/internal/server/resp"
-	"github.com/bestruirui/octopus/internal/server/router"
 	"github.com/gin-gonic/gin"
+	"github.com/shengmingboai/octopus/internal/model"
+	"github.com/shengmingboai/octopus/internal/op"
+	"github.com/shengmingboai/octopus/internal/server/auth"
+	"github.com/shengmingboai/octopus/internal/server/middleware"
+	"github.com/shengmingboai/octopus/internal/server/resp"
+	"github.com/shengmingboai/octopus/internal/server/router"
 )
 
 func init() {

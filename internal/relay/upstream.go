@@ -8,8 +8,6 @@ import (
 	"net/http"
 	"slices"
 
-	"github.com/bestruirui/octopus/internal/model"
-	"github.com/bestruirui/octopus/internal/rhttp"
 	"github.com/looplj/axonhub/llm"
 	"github.com/looplj/axonhub/llm/httpclient"
 	"github.com/looplj/axonhub/llm/pipeline"
@@ -18,6 +16,8 @@ import (
 	"github.com/looplj/axonhub/llm/transformer/anthropic"
 	"github.com/looplj/axonhub/llm/transformer/openai"
 	"github.com/looplj/axonhub/llm/transformer/openai/responses"
+	"github.com/shengmingboai/octopus/internal/model"
+	"github.com/shengmingboai/octopus/internal/rhttp"
 )
 
 // upstreamResponse 是已验证但尚未写给客户端的上游成功响应; events 为 nil 表示非流式响应。
@@ -145,11 +145,11 @@ func sendPassthroughStream(ctx context.Context, format llm.APIFormat, request *h
 
 // conversionMiddleware 保存跨协议 pipeline 单次调用需要应用和取得的状态。
 type conversionMiddleware struct {
-	pipeline.DummyMiddleware // 提供本次无需处理的其余 pipeline 中间件方法。
-	channel model.Channel // 本轮上游请求使用的渠道配置。
-	format  llm.APIFormat // 上游渠道协议, 用于校验统一响应终态。
-	rawBody []byte        // 上游非流式响应或错误的原始正文。
-	usage   *llm.Usage    // 非流式统一响应中确认的用量。
+	pipeline.DummyMiddleware               // 提供本次无需处理的其余 pipeline 中间件方法。
+	channel                  model.Channel // 本轮上游请求使用的渠道配置。
+	format                   llm.APIFormat // 上游渠道协议, 用于校验统一响应终态。
+	rawBody                  []byte        // 上游非流式响应或错误的原始正文。
+	usage                    *llm.Usage    // 非流式统一响应中确认的用量。
 }
 
 // OnOutboundRawRequest 在转换后的上游请求上应用渠道参数和自定义 Header。

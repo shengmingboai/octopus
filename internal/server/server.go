@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/bestruirui/octopus/internal/conf"
-	_ "github.com/bestruirui/octopus/internal/server/handlers"
-	"github.com/bestruirui/octopus/internal/server/middleware"
-	"github.com/bestruirui/octopus/internal/server/resp"
-	"github.com/bestruirui/octopus/internal/server/router"
-	"github.com/bestruirui/octopus/static"
 	"github.com/charmbracelet/log"
 	"github.com/gin-gonic/gin"
+	"github.com/shengmingboai/octopus/internal/conf"
+	_ "github.com/shengmingboai/octopus/internal/server/handlers"
+	"github.com/shengmingboai/octopus/internal/server/middleware"
+	"github.com/shengmingboai/octopus/internal/server/resp"
+	"github.com/shengmingboai/octopus/internal/server/router"
+	"github.com/shengmingboai/octopus/static"
 )
 
 var httpSrv http.Server

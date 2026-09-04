@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/shengmingboai/octopus/internal/model"
 )
 
 // RouteState 是一个分组的进程内路由状态; 跨该分组的全部请求共享。

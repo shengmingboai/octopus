@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/bestruirui/octopus/internal/db"
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/shengmingboai/octopus/internal/db"
+	"github.com/shengmingboai/octopus/internal/model"
 	"gorm.io/gorm"
 )
 

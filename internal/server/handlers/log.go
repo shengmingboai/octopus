@@ -6,12 +6,12 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/relay"
-	"github.com/bestruirui/octopus/internal/server/middleware"
-	"github.com/bestruirui/octopus/internal/server/resp"
-	"github.com/bestruirui/octopus/internal/server/router"
 	"github.com/gin-contrib/sse"
 	"github.com/gin-gonic/gin"
+	"github.com/shengmingboai/octopus/internal/relay"
+	"github.com/shengmingboai/octopus/internal/server/middleware"
+	"github.com/shengmingboai/octopus/internal/server/resp"
+	"github.com/shengmingboai/octopus/internal/server/router"
 )
 
 func init() {

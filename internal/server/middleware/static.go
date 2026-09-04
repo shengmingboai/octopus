@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/server/resp"
 	"github.com/gin-gonic/gin"
+	"github.com/shengmingboai/octopus/internal/server/resp"
 )
 
 func StaticEmbed(urlPrefix string, embedFS fs.FS) gin.HandlerFunc {

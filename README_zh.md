@@ -39,14 +39,14 @@ docker run -d --name octopus -v /path/to/data:/app/data -p 8080:8080 bestrui/oct
 或者使用 docker compose 运行
 
 ```bash
-wget https://raw.githubusercontent.com/bestruirui/octopus/refs/heads/master/docker-compose.yml
+wget https://raw.githubusercontent.com/shengmingboai/octopus/refs/heads/master/docker-compose.yml
 docker compose up -d
 ```
 
 
 ### 📦 从 Release 下载
 
-从 [Releases](https://github.com/bestruirui/octopus/releases) 下载对应平台的二进制文件，然后运行：
+从 [Releases](https://github.com/shengmingboai/octopus/releases) 下载对应平台的二进制文件，然后运行：
 
 ```bash
 ./octopus start
@@ -61,7 +61,7 @@ docker compose up -d
 
 ```bash
 # 克隆项目
-git clone https://github.com/bestruirui/octopus.git
+git clone https://github.com/shengmingboai/octopus.git
 cd octopus
 # 构建前端
 cd web && pnpm install && pnpm run build
@@ -368,5 +368,5 @@ experimental_bearer_token = "sk-octopus-"
 
 - 🙏 [looplj/axonhub](https://github.com/looplj/axonhub) - 本项目的 LLM API 适配模块直接源自该仓库的实现
 - 📊 [sst/models.dev](https://github.com/sst/models.dev) - AI 模型数据库，提供模型价格数据
-- 🇨🇳 [AtomGit](https://atomgit.com/bestruirui/octopus) - 国内代码托管
+- 🇨🇳 [AtomGit](https://atomgit.com/shengmingboai/octopus) - 国内代码托管
 - 💬 [Linux.do](https://linux.do/)
