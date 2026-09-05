@@ -65,7 +65,8 @@ func ResetRouteState(groupID int) {
 
 // pickGroupItem 按分组模式选择本轮目标成员, 没有可用成员时返回零值; group.Items 已按 Priority 升序排列。
 // skip 为本请求内已耗尽尝试的成员集合: 不冷却成员不写入跨请求冷却表, 只能由此在本请求内跳过。
-// 渠道是否可用不在此判断: 渠道禁用或缺少密钥由调用方发现并作为一轮失败上报, 该成员随即进入冷却而在后续轮次被跳过。
+// 渠道是否可用不在此判断: 渠道禁用由调用方发现并写入 skip, 亲和与当前成员沿用都会为此让位;
+// 凭据停用或授权缺失则由调用方按等待处理, 该成员可能很快被改回可用配置。
 func pickGroupItem(group model.Group, skip map[int]bool) model.GroupItem {
 	if group.Mode == model.GroupModeManual {
 		for _, item := range group.Items {
@@ -85,14 +86,14 @@ func pickGroupItem(group model.Group, skip map[int]bool) model.GroupItem {
 		route.AffinityUntil = 0
 	}
 
-	// 亲和期内沿用当前成员, 不提前探测已恢复的高优先级成员。
-	if route.CurrentItemID != 0 && route.AffinityUntil > now {
+	// 亲和期内沿用当前成员, 不提前探测已恢复的高优先级成员; 当前成员被本请求跳过时亲和让位。
+	if route.CurrentItemID != 0 && route.AffinityUntil > now && !skip[route.CurrentItemID] {
 		return itemOf(group, route.CurrentItemID)
 	}
 
 	for _, item := range group.Items {
-		// 遍历到当前成员说明比它优先级更高的成员都不可选, 沿用当前成员。
-		if item.ID == route.CurrentItemID {
+		// 遍历到当前成员说明比它优先级更高的成员都不可选, 沿用当前成员; 当前成员被本请求跳过时继续看更低优先级成员。
+		if item.ID == route.CurrentItemID && !skip[item.ID] {
 			break
 		}
 		if skip[item.ID] {
@@ -115,7 +116,8 @@ func pickGroupItem(group model.Group, skip map[int]bool) model.GroupItem {
 		publishRouteLocked(route)
 		return item
 	}
-	if route.CurrentItemID != 0 {
+	// 全部成员都不可选时沿用当前成员兜底; 它被本请求跳过时放弃, 交由调用方等待。
+	if route.CurrentItemID != 0 && !skip[route.CurrentItemID] {
 		return itemOf(group, route.CurrentItemID)
 	}
 	return model.GroupItem{}
