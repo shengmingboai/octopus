@@ -65,8 +65,8 @@ func ResetRouteState(groupID int) {
 
 // pickGroupItem 按分组模式选择本轮目标成员, 没有可用成员时返回零值; group.Items 已按 Priority 升序排列。
 // skip 为本请求内已耗尽尝试的成员集合: 不冷却成员不写入跨请求冷却表, 只能由此在本请求内跳过。
-// 渠道是否可用不在此判断: 渠道禁用由调用方发现并写入 skip, 亲和与当前成员沿用都会为此让位;
-// 凭据停用或授权缺失则由调用方按等待处理, 该成员可能很快被改回可用配置。
+// 不可用成员(渠道或凭据被停用, 两侧被删除)不参与选路, 也不会被登记为当前路由;
+// 可用性取自分组快照的实时口径, 调用方仍保留权威校验以兜底两次读取之间的状态变化。
 func pickGroupItem(group model.Group, skip map[int]bool) model.GroupItem {
 	if group.Mode == model.GroupModeManual {
 		for _, item := range group.Items {
@@ -96,7 +96,7 @@ func pickGroupItem(group model.Group, skip map[int]bool) model.GroupItem {
 		if item.ID == route.CurrentItemID && !skip[item.ID] {
 			break
 		}
-		if skip[item.ID] {
+		if skip[item.ID] || !item.Available {
 			continue
 		}
 		deadline, cooling := route.Cooldowns[item.ID]
@@ -220,29 +220,38 @@ func releaseRouteProbe(group model.Group, itemID int) {
 	}
 }
 
-// groupRouteLocked 取出分组路由状态并清理已删除成员的残留; 调用方必须持有锁。
+// groupRouteLocked 取出分组路由状态并清理已删除或不可用成员的残留, 有清理时发布一次; 调用方必须持有锁。
 func groupRouteLocked(group model.Group) *RouteState {
 	route := routes[group.ID]
 	if route == nil {
 		route = &RouteState{GroupID: group.ID, Cooldowns: make(map[int]int64)}
 		routes[group.ID] = route
 	}
+	// items 的值为该成员是否可用: 冷却只清已删除的成员, 不可用成员的冷却保留, 重新启用后继续生效。
 	items := make(map[int]bool, len(group.Items))
 	for _, item := range group.Items {
-		items[item.ID] = true
+		items[item.ID] = item.Available
 	}
+	changed := false
 	for itemID := range route.Cooldowns {
-		if !items[itemID] {
+		if _, exists := items[itemID]; !exists {
 			delete(route.Cooldowns, itemID)
+			changed = true
 		}
 	}
+	// 当前路由与探测占用让不可用成员立即让位, 否则禁用成员会残留勾选并继续显示为当前路由。
 	if route.ProbeItemID != 0 && !items[route.ProbeItemID] {
 		route.ProbeItemID = 0
+		changed = true
 	}
 	if route.CurrentItemID != 0 && !items[route.CurrentItemID] {
 		route.CurrentItemID = 0
 		route.AffinityUntil = 0
 		route.affinityArmed = false
+		changed = true
+	}
+	if changed {
+		publishRouteLocked(route)
 	}
 	return route
 }

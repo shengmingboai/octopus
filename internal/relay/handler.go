@@ -128,8 +128,8 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				continue
 			}
 
-			// 渠道被禁用后不再参与转发: 故障转移模式本请求内跳过该成员立即重新选路,
-			// 分组再无可用成员时按无目标等待其重新启用; 手动模式只有人工指定的这一个成员, 等待其重新启用或被切换。
+			// 选路已按分组快照排除禁用成员, 此处兜底两次读取之间被停用的渠道: 故障转移模式跳过该成员重新选路,
+			// 分组再无可用成员时按无目标等待; 手动模式只有人工指定的这一个成员, 等待其重新启用或被切换。
 			if !channel.Enabled {
 				if group.Mode == model.GroupModeManual {
 					if !request.wait(ctx, group.RelayConfig.MemberRetryIntervalSeconds) {
