@@ -20,6 +20,7 @@ export interface RelayUsage {
 export interface RelayLogRound {
     round: number;
     channel: string;
+    key?: string;
     model: string;
     error?: string;
     sending: boolean;
@@ -31,6 +32,7 @@ export interface RelayLogOverview {
     status: RequestState;
     started_at: string;
     duration: number;
+    first_token: number;
     model: string;
     protocol: number;
     group_id: number;
@@ -38,6 +40,7 @@ export interface RelayLogOverview {
     cost: number;
     round: number;
     target_channel: string;
+    target_key: string;
     target_model: string;
     target_protocol: number;
     sending: boolean;

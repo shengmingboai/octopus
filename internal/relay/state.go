@@ -27,6 +27,7 @@ const (
 type RoundState struct {
 	Round   int    `json:"round"`           // 请求内递增的轮次序号。
 	Channel string `json:"channel"`         // 本轮实际请求的渠道名称。
+	Key     string `json:"key,omitempty"`   // 本轮实际使用的凭据名称。
 	Model   string `json:"model"`           // 本轮实际请求上游的模型名称。
 	Error   string `json:"error,omitempty"` // 本轮失败原因, 空表示已取得可提交响应。
 	Sending bool   `json:"sending"`         // 本轮是否仍在等待上游响应。
@@ -34,28 +35,31 @@ type RoundState struct {
 
 // 客户端请求的完整进程内状态, 同时作为状态流的消息形状; 上半部分在请求到达时写入并在结束时定稿, 下半部分每轮循环覆盖。
 type RequestState struct {
-	ID        uint64         `json:"id"`         // 请求在当前进程内的唯一标识。
-	Status    Status         `json:"status"`     // 请求当前状态。
-	StartedAt time.Time      `json:"started_at"` // 请求到达时间。
-	Duration  time.Duration  `json:"duration"`   // 请求总耗时, 未结束时为零。
-	Model     string         `json:"model"`      // 客户端请求的模型名称, 即分组名称。
-	Protocol  model.Protocol `json:"protocol"`   // 客户端请求使用的协议, 由入站格式定出, 单个协议位而非掩码组合。
-	GroupID   int            `json:"group_id"`   // 承载本请求的分组 ID, 供界面按主键直接定位分组而不必按名称回查。
-	Usage     llm.Usage      `json:"usage"`      // 请求结束时写入的展示用量。
-	Cost      float64        `json:"cost"`       // 请求结束时写入的累计费用。
+	ID         uint64         `json:"id"`          // 请求在当前进程内的唯一标识。
+	Status     Status         `json:"status"`      // 请求当前状态。
+	StartedAt  time.Time      `json:"started_at"`  // 请求到达时间。
+	Duration   time.Duration  `json:"duration"`    // 请求总耗时, 未结束时为零。
+	FirstToken time.Duration  `json:"first_token"` // 最新成功轮的首字耗时: 流式为等待首帧, 非流式为等待完整响应; 零表示尚未取得。
+	Model      string         `json:"model"`       // 客户端请求的模型名称, 即分组名称。
+	Protocol   model.Protocol `json:"protocol"`    // 客户端请求使用的协议, 由入站格式定出, 单个协议位而非掩码组合。
+	GroupID    int            `json:"group_id"`    // 承载本请求的分组 ID, 供界面按主键直接定位分组而不必按名称回查。
+	Usage      llm.Usage      `json:"usage"`       // 请求结束时写入的展示用量。
+	Cost       float64        `json:"cost"`        // 请求结束时写入的累计费用。
 
-	Round          int            `json:"round"`           // 最新一轮循环的递增序号, 人工中止按此匹配以免误杀下一轮。
-	TargetChannel  string         `json:"target_channel"`  // 最新一轮选中的渠道名称。
-	TargetModel    string         `json:"target_model"`    // 最新一轮实际请求上游的模型名称。
-	TargetProtocol model.Protocol `json:"target_protocol"` // 最新一轮实际请求上游的协议, 与 Protocol 不同即本轮做了跨协议转换; 0 表示尚未选出。
-	Sending        bool           `json:"sending"`         // 最新一轮是否仍在等待上游响应。
-	Error          string         `json:"error,omitempty"` // 最新一轮的失败原因, 请求结束后即为最终错误。
+	Round          int            `json:"round"`            // 最新一轮循环的递增序号, 人工中止按此匹配以免误杀下一轮。
+	TargetChannel  string         `json:"target_channel"`   // 最新一轮选中的渠道名称。
+	TargetKey      string         `json:"target_key"`       // 最新一轮使用的凭据名称。
+	TargetModel    string         `json:"target_model"`     // 最新一轮实际请求上游的模型名称。
+	TargetProtocol model.Protocol `json:"target_protocol"`  // 最新一轮实际请求上游的协议, 与 Protocol 不同即本轮做了跨协议转换; 0 表示尚未选出。
+	Sending        bool           `json:"sending"`          // 最新一轮是否仍在等待上游响应。
+	Error          string         `json:"error,omitempty"`  // 最新一轮的失败原因, 请求结束后即为最终错误。
 	Rounds         []RoundState   `json:"rounds,omitempty"` // 历轮调用记录, 界面借此回放每次重试的目标与失败原因。
 
-	body         string             // 客户端原始请求体, 体积大故不进状态流, 由独立接口按需拉取。
-	responseBody string             // 聚合后的完整最终响应体, 同样按需拉取。
-	apiKeyID     int                // 发起请求的 API Key ID, 用于请求完成后的归属统计。
-	cancel       context.CancelFunc // 中止最新一轮上游请求, 仅在该轮等待响应期间非空。
+	body           string             // 客户端原始请求体, 体积大故不进状态流, 由独立接口按需拉取。
+	responseBody   string             // 聚合后的完整最终响应体, 同样按需拉取。
+	apiKeyID       int                // 发起请求的 API Key ID, 用于请求完成后的归属统计。
+	roundStartedAt time.Time          // 最新一轮上游调用的开始时间, 用于计算首字耗时。
+	cancel         context.CancelFunc // 中止最新一轮上游请求, 仅在该轮等待响应期间非空。
 }
 
 const streamBuffer = 16 // 单个状态流连接的非阻塞消息缓冲容量。
@@ -89,18 +93,20 @@ func newRequestState(modelName string, groupID int, protocol model.Protocol, bod
 }
 
 // startRound 记录本轮选中的目标并进入上游请求, cancel 供人工中止本轮, 返回递增的轮次序号。
-func (r *RequestState) startRound(cancel context.CancelFunc, channel, modelName string, protocol model.Protocol) int {
+func (r *RequestState) startRound(cancel context.CancelFunc, channel, keyName, modelName string, protocol model.Protocol) int {
 	mu.Lock()
 	defer mu.Unlock()
 
 	r.Round++
 	r.TargetChannel = channel
+	r.TargetKey = keyName
 	r.TargetModel = modelName
 	r.TargetProtocol = protocol
 	r.Sending = true
 	r.Error = ""
 	r.cancel = cancel
-	r.Rounds = append(r.Rounds, RoundState{Round: r.Round, Channel: channel, Model: modelName, Sending: true})
+	r.roundStartedAt = time.Now()
+	r.Rounds = append(r.Rounds, RoundState{Round: r.Round, Channel: channel, Key: keyName, Model: modelName, Sending: true})
 	publishRequestLocked(r)
 	return r.Round
 }
@@ -113,6 +119,9 @@ func (r *RequestState) finishRound(errText string) {
 	r.Sending = false
 	r.Error = errText
 	r.cancel = nil
+	if errText == "" {
+		r.FirstToken = time.Since(r.roundStartedAt)
+	}
 	if n := len(r.Rounds); n > 0 && r.Rounds[n-1].Round == r.Round {
 		r.Rounds[n-1].Sending = false
 		r.Rounds[n-1].Error = errText

@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useState, type CSSProperties } from 'react';
-import { AlertCircle, ArrowDownToLine, ArrowRight, ArrowUpFromLine, Clock, Cpu, Database, DollarSign, Loader2, Square } from 'lucide-react';
+import { AlertCircle, ArrowDownToLine, ArrowRight, ArrowUpFromLine, Clock, Database, DollarSign, Loader2, Square, Timer, Zap } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import JsonView from '@uiw/react-json-view';
 import { githubDarkTheme } from '@uiw/react-json-view/githubDark';
@@ -54,29 +54,37 @@ const PROTOCOL_LABELS: Record<number, string> = {
     [Protocol.AnthropicMessage]: 'Message',
 };
 
-// LogMetrics 渲染耗时, 费用和 Token 指标; card 变体用于卡片栅格, footer 变体用于弹窗底部。
+// LogMetrics 渲染耗时, 速率, 费用和 Token 指标; card 变体用于卡片栅格, footer 变体用于弹窗底部。
 function LogMetrics({ log, now, brandColor, variant }: { log: RelayLogOverview; now: number; brandColor: string; variant: 'card' | 'footer' }) {
-    const cachedTokens = log.usage.prompt_tokens_details?.cached_tokens ?? 0;
+    const running = log.status === 'running' || log.status === 'committed';
     // 进行中的请求按共享时钟推算耗时, 结束后改用后端记录的最终耗时。
-    const duration = log.status === 'running' || log.status === 'committed'
-        ? formatMilliseconds(now - new Date(log.started_at).getTime())
-        : formatMilliseconds(log.duration / 1_000_000);
+    const durationMs = running ? now - new Date(log.started_at).getTime() : log.duration / 1_000_000;
+    const firstTokenMs = log.first_token / 1_000_000;
     const metrics = [
-        { key: 'time', Icon: Clock, iconClassName: 'size-3.5 shrink-0', iconStyle: { color: brandColor } as CSSProperties, value: formatTime(log.started_at), valueClassName: 'tabular-nums', cellClassName: 'col-span-4 whitespace-nowrap md:col-span-1' },
-        { key: 'duration', Icon: Cpu, iconClassName: 'size-3.5 shrink-0 text-blue-500', value: duration, cellClassName: 'col-span-4 md:col-span-1' },
+        { key: 'time', Icon: Clock, iconClassName: 'size-3.5 shrink-0', iconStyle: { color: brandColor } as CSSProperties, value: formatTime(log.started_at), valueClassName: 'tabular-nums', cellClassName: 'col-span-4 md:col-span-1' },
+        { key: 'duration', Icon: Timer, iconClassName: 'size-3.5 shrink-0 text-blue-500', value: firstTokenMs > 0 ? `${formatMilliseconds(firstTokenMs)} / ${formatMilliseconds(durationMs)}` : formatMilliseconds(durationMs), cellClassName: 'col-span-4 md:col-span-1' },
+        { key: 'speed', Icon: Zap, iconClassName: 'size-3.5 shrink-0 text-orange-500', value: durationMs > 0 ? (log.usage.completion_tokens / (durationMs / 1000)).toFixed(1) : '--', cellClassName: 'col-span-4 md:col-span-1' },
+        { key: 'prompt', Icon: ArrowDownToLine, iconClassName: 'size-3.5 shrink-0 text-emerald-500', value: log.usage.prompt_tokens.toLocaleString(), cellClassName: 'col-span-4 md:col-span-1' },
+        { key: 'completion', Icon: ArrowUpFromLine, iconClassName: 'size-3.5 shrink-0 text-violet-500', value: log.usage.completion_tokens.toLocaleString(), cellClassName: 'col-span-4 md:col-span-1' },
+        { key: 'cached', Icon: Database, iconClassName: 'size-3.5 shrink-0 text-orange-500', value: (log.usage.prompt_tokens_details?.cached_tokens ?? 0).toLocaleString(), cellClassName: 'col-span-4 md:col-span-1' },
         { key: 'cost', Icon: DollarSign, iconClassName: 'size-3.5 shrink-0 text-emerald-500', value: log.cost.toFixed(6), valueClassName: 'font-medium text-emerald-600 dark:text-emerald-400', cellClassName: 'col-span-4 md:col-span-1' },
-        { key: 'prompt', Icon: ArrowDownToLine, iconClassName: 'size-3.5 shrink-0 text-green-500', value: (log.usage.prompt_tokens - cachedTokens).toLocaleString(), cellClassName: 'col-span-3 md:col-span-1' },
-        { key: 'cached', Icon: Database, iconClassName: 'size-3.5 shrink-0 text-cyan-500', value: cachedTokens.toLocaleString(), cellClassName: 'col-span-3 md:col-span-1' },
-        { key: 'completion', Icon: ArrowUpFromLine, iconClassName: 'size-3.5 shrink-0 text-purple-500', value: log.usage.completion_tokens.toLocaleString(), cellClassName: 'col-span-3 md:col-span-1' },
-        { key: 'cacheWrite', Icon: Database, iconClassName: 'size-3.5 shrink-0 text-orange-500', value: (log.usage.prompt_tokens_details?.write_cached_tokens ?? 0).toLocaleString(), cellClassName: 'col-span-3 md:col-span-1' },
     ];
 
-    return metrics.map((metric) => (
-        <div key={metric.key} className={cn('flex items-center gap-1.5', variant === 'card' && metric.cellClassName)}>
+    const items = metrics.map((metric) => (
+        <div key={metric.key} className={cn('flex items-center gap-1.5 whitespace-nowrap', variant === 'card' && metric.cellClassName)}>
             <metric.Icon className={metric.iconClassName} style={metric.iconStyle} />
             <span className={metric.valueClassName}>{metric.value}</span>
         </div>
     ));
+
+    if (variant === 'card') {
+        return (
+            <div className="grid grid-cols-12 gap-x-4 gap-y-2 text-xs tabular-nums text-muted-foreground md:grid-cols-7">
+                {items}
+            </div>
+        );
+    }
+    return items;
 }
 
 // JsonContent 渲染请求或响应正文, 能解析为 JSON 时使用折叠视图, 否则按纯文本展示。
@@ -144,6 +152,8 @@ function LogDetail({ log, now }: { log: RelayLogOverview; now: number }) {
     const errorText = log.error ?? '';
     const requestFailed = log.status === 'failed' || log.status === 'canceled';
     const responseCommitted = log.status === 'committed';
+    // 目标徽标在渠道后附带本轮使用的凭据, 与分组页成员的展示格式一致。
+    const targetLabel = log.target_channel ? (log.target_key ? `${log.target_channel} · ${log.target_key}` : log.target_channel) : '-';
     // 历轮调用记录由后端随状态流推送完整历史, 按轮次正序回放。
     const rounds = useMemo(() => log.rounds ?? [], [log.rounds]);
     // 进行中与最终失败始终展示重试详情; 成功请求存在多轮时也回放, 单轮成功没有可回放的内容。
@@ -158,7 +168,7 @@ function LogDetail({ log, now }: { log: RelayLogOverview; now: number }) {
                 <div key={round.round} className="flex flex-col gap-1.5 px-3 py-2.5 text-xs">
                     <div className="flex items-center gap-2">
                         <span className="text-muted-foreground">{t('retryIndex', { index: round.round })}</span>
-                        <span className="font-semibold text-foreground">{round.channel || '-'}</span>
+                        <span className="font-semibold text-foreground">{round.channel ? (round.key ? `${round.channel} · ${round.key}` : round.channel) : '-'}</span>
                         {round.sending ? (
                             <Loader2 className="ml-auto size-3.5 animate-spin text-muted-foreground" />
                         ) : round.error ? (
@@ -202,7 +212,7 @@ function LogDetail({ log, now }: { log: RelayLogOverview; now: number }) {
                     className="text-xs px-1.5 py-0"
                     style={{ backgroundColor: `${brandColor}15`, color: brandColor }}
                 >
-                    {log.target_channel || '-'}
+                    {targetLabel}
                 </Badge>
                 <span className="text-muted-foreground">{actualModel}</span>
             </MorphingDialogTitle>
@@ -430,6 +440,8 @@ function LogCardBody({ log }: { log: RelayLogOverview }) {
     const [now, setNow] = useState(() => Date.now());
     const actualModel = log.target_model || log.model;
     const { Icon, className: iconClassName, color: brandColor } = getModelIcon(actualModel);
+    // 目标徽标在渠道后附带本轮使用的凭据, 与分组页成员的展示格式一致。
+    const targetLabel = log.target_channel ? (log.target_key ? `${log.target_channel} · ${log.target_key}` : log.target_channel) : '-';
     const requestRunning = log.status === 'running' || log.status === 'committed';
     const requestFailed = log.status === 'failed' || log.status === 'canceled';
     const errorText = log.error ?? '';
@@ -466,15 +478,13 @@ function LogCardBody({ log }: { log: RelayLogOverview }) {
                                 className="shrink-0 text-xs px-1.5 py-0"
                                 style={{ backgroundColor: `${brandColor}15`, color: brandColor }}
                             >
-                                {log.target_channel || '-'}
+                                {targetLabel}
                             </Badge>
                             <span className="text-muted-foreground truncate">
                                 {actualModel}
                             </span>
                         </div>
-                        <div className="grid grid-cols-12 gap-x-4 gap-y-2 text-xs tabular-nums text-muted-foreground md:grid-cols-7">
-                            <LogMetrics log={log} now={now} brandColor={brandColor} variant="card" />
-                        </div>
+                        <LogMetrics log={log} now={now} brandColor={brandColor} variant="card" />
                         {requestFailed && errorText && (
                             <div className="p-2.5 rounded-xl bg-destructive/10 border border-destructive/20 overflow-hidden">
                                 <p className="text-xs text-destructive line-clamp-2 whitespace-pre-line">{errorText}</p>
