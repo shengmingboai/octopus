@@ -18,10 +18,12 @@ export function SettingInfo() {
     const backendNowVersion = nowVersionQuery.data || '';
     const latestVersion = latestInfoQuery.data?.tag_name || '';
 
+    // 本地开发不做版本比对: 前端 dev 服务没有构建版本号, 后端未注入 ldflags 时版本为 dev, 警告只会误导。
+    const isDev = import.meta.env.DEV || backendNowVersion === 'dev';
     // 前端版本与后端当前版本不一致 → 浏览器缓存问题
-    const isCacheMismatch = !!backendNowVersion && backendNowVersion !== APP_VERSION;
+    const isCacheMismatch = !isDev && !!backendNowVersion && APP_VERSION !== 'unknown' && backendNowVersion !== APP_VERSION;
     // 最新版本与后端当前版本不一致 → 有新版本可更新
-    const hasNewVersion = latestVersion && backendNowVersion && latestVersion !== backendNowVersion;
+    const hasNewVersion = !isDev && !!latestVersion && !!backendNowVersion && latestVersion !== backendNowVersion;
 
     // clearCacheAndReload 清理 Octopus 缓存和根作用域注册后刷新页面。
     const clearCacheAndReload = async () => {
