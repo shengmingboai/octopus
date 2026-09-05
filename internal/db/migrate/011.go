@@ -248,6 +248,10 @@ func migrateGroupItemsToGrants(db *gorm.DB, grantIDByModel map[int]int) error {
 			return fmt.Errorf("failed to create migrated group_items: %w", err)
 		}
 	}
+	// 回填按原主键插入, 不会推进重建后的序列, 需显式对齐以免运行期插入新成员时主键冲突。
+	if err := resetGroupItemsSequence(db); err != nil {
+		return err
+	}
 	if len(discardedIDs) > 0 {
 		if err := db.Model(&groupsTable{}).Where("active_item_id IN ?", discardedIDs).
 			Update("active_item_id", 0).Error; err != nil {
