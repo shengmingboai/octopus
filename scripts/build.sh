@@ -7,7 +7,7 @@ readonly VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo 'dev')" #
 readonly COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo 'unknown')" # 当前提交短哈希。
 readonly LDFLAGS="-X 'github.com/shengmingboai/${APP_NAME}/internal/conf.Version=${VERSION}' \
                   -X 'github.com/shengmingboai/${APP_NAME}/internal/conf.BuildTime=$(TZ='Asia/Shanghai' date +'%F %T %z')' \
-                  -X 'github.com/shengmingboai/${APP_NAME}/internal/conf.Author=bestrui' \
+                  -X 'github.com/shengmingboai/${APP_NAME}/internal/conf.Author=shengmingboai' \
                   -X 'github.com/shengmingboai/${APP_NAME}/internal/conf.Commit=${COMMIT}' \
                   -s -w" # 注入版本信息并缩小发布二进制。
 
