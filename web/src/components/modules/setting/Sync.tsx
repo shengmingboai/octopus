@@ -1,9 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'use-intl';
 import { RefreshCw, Clock } from 'lucide-react';
-import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { useSettingList, useSetSetting, SettingKey } from '@/api/setting';
+import { SettingKey } from '@/api/setting';
+import { SettingInput } from './SettingInput';
 import { useLastSyncTime, useSyncAllChannels } from '@/api/channel';
 import { toast } from 'sonner';
 
@@ -11,34 +10,8 @@ import { toast } from 'sonner';
 // 与自动同步共用后端同一编排: 探测成功且列表里没有的授权标记为上游消失, 恢复的按原协议复活。
 export function SettingSync() {
     const t = useTranslations('setting');
-    const { data: settings } = useSettingList();
-    const setSetting = useSetSetting();
     const syncAllChannels = useSyncAllChannels();
     const { data: lastSyncTime } = useLastSyncTime();
-
-    const [syncInterval, setSyncInterval] = useState('');
-    const initialSyncInterval = useRef('');
-
-    useEffect(() => {
-        if (settings) {
-            const interval = settings.find(s => s.key === SettingKey.SyncModelsInterval);
-            if (interval) {
-                queueMicrotask(() => setSyncInterval(interval.value));
-                initialSyncInterval.current = interval.value;
-            }
-        }
-    }, [settings]);
-
-    const handleSave = (key: string, value: string, initialValue: string) => {
-        if (value === initialValue) return;
-
-        setSetting.mutate({ key, value }, {
-            onSuccess: () => {
-                toast.success(t('saved'));
-                initialSyncInterval.current = value;
-            }
-        });
-    };
 
     const handleManualSync = () => {
         syncAllChannels.mutate(undefined, {
@@ -71,13 +44,14 @@ export function SettingSync() {
                     <Clock className="h-5 w-5 text-muted-foreground" />
                     <span className="text-sm font-medium">{t('llmSync.syncInterval.label')}</span>
                 </div>
-                <Input
+                <SettingInput
+                    settingKey={SettingKey.SyncModelsInterval}
+                    aria-label={t('llmSync.syncInterval.label')}
                     type="number"
-                    value={syncInterval}
-                    onChange={(e) => setSyncInterval(e.target.value)}
-                    onBlur={() => handleSave(SettingKey.SyncModelsInterval, syncInterval, initialSyncInterval.current)}
+                    min={0}
+                    step={1}
                     placeholder={t('llmSync.syncInterval.placeholder')}
-                    className="w-48 rounded-xl"
+                    className="w-40 max-w-[45%] shrink-0 rounded-xl"
                 />
             </div>
 

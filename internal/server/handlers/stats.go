@@ -2,45 +2,17 @@ package handlers
 
 import (
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/shengmingboai/octopus/internal/model"
 	"github.com/shengmingboai/octopus/internal/op"
-	"github.com/shengmingboai/octopus/internal/server/middleware"
 	"github.com/shengmingboai/octopus/internal/server/resp"
-	"github.com/shengmingboai/octopus/internal/server/router"
 )
-
-var activityMaxRequestCount int64     // 最近 54 周每日请求量的最大值。
-var activityMaxCalculatedAt time.Time // 最大值上次计算时间。
-var activityMaxMu sync.Mutex          // 保护最大值及计算时间的并发更新。
 
 type statsDailyResponse struct {
 	MaxRequestCount int64              `json:"max_request_count"` // 最近 54 周每日请求量的最大值。
 	Items           []model.StatsDaily `json:"items"`             // 每日原始统计数据。
-}
-
-func init() {
-	router.NewGroupRouter("/api/v1/stats").
-		Use(middleware.Auth()).
-		AddRoute(
-			router.NewRoute("/daily", http.MethodGet).
-				Handle(getStatsDaily),
-		).
-		AddRoute(
-			router.NewRoute("/hourly", http.MethodGet).
-				Handle(getStatsHourly),
-		).
-		AddRoute(
-			router.NewRoute("/total", http.MethodGet).
-				Handle(getStatsTotal),
-		).
-		AddRoute(
-			router.NewRoute("/apikey", http.MethodGet).
-				Handle(getStatsAPIKey),
-		)
 }
 
 func getStatsDaily(c *gin.Context) {
@@ -52,20 +24,10 @@ func getStatsDaily(c *gin.Context) {
 		return
 	}
 
-	activityMaxMu.Lock()
-	if activityMaxCalculatedAt.IsZero() || now.Sub(activityMaxCalculatedAt) >= 24*time.Hour {
-		maxRequestCount := int64(0)
-		for _, daily := range statsDaily {
-			requestCount := daily.RequestSuccess + daily.RequestFailed
-			if requestCount > maxRequestCount {
-				maxRequestCount = requestCount
-			}
-		}
-		activityMaxRequestCount = maxRequestCount
-		activityMaxCalculatedAt = now
+	maxRequestCount := int64(0)
+	for _, daily := range statsDaily {
+		maxRequestCount = max(maxRequestCount, daily.RequestSuccess+daily.RequestFailed)
 	}
-	maxRequestCount := activityMaxRequestCount
-	activityMaxMu.Unlock()
 
 	resp.Success(c, statsDailyResponse{
 		MaxRequestCount: maxRequestCount,

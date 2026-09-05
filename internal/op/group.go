@@ -281,7 +281,7 @@ func groupSnapshot(group model.Group) model.Group {
 			continue
 		}
 		group.Items[i].ChannelName = channel.Name
-		group.Items[i].Available = channel.Enabled && channelKey.Enabled
+		group.Items[i].Available = channelGrantAvailable(grant, channel, channelKey)
 	}
 	return group
 }

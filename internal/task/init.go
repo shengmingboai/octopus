@@ -11,44 +11,20 @@ import (
 	"github.com/shengmingboai/octopus/internal/probe"
 )
 
-const (
-	TaskPriceUpdate = "price_update"
-	TaskStatsSave   = "stats_save"
-	TaskCleanLLM    = "clean_llm"
-)
-
-func Init() {
-	priceUpdateIntervalHours, err := op.SettingGetInt(model.SettingKeyModelInfoUpdateInterval)
-	if err != nil {
-		log.Errorf("failed to get model info update interval: %v", err)
-		return
-	}
-	priceUpdateInterval := time.Duration(priceUpdateIntervalHours) * time.Hour
+func Init() error {
 	// 注册价格更新任务
-	Register(string(model.SettingKeyModelInfoUpdateInterval), priceUpdateInterval, true, func() {
-		if err := price.UpdateLLMPrice(context.Background()); err != nil {
+	Register(string(model.SettingKeyModelInfoUpdateInterval), 0, true, func(ctx context.Context) {
+		if err := price.UpdateLLMPrice(ctx); err != nil {
 			log.Warnf("failed to update price info: %v", err)
 		}
 	})
 
 	// 注册统计保存任务
-	statsSaveIntervalMinutes, err := op.SettingGetInt(model.SettingKeyStatsSaveInterval)
-	if err != nil {
-		log.Warnf("failed to get stats save interval: %v", err)
-		return
-	}
-	statsSaveInterval := time.Duration(statsSaveIntervalMinutes) * time.Minute
-	Register(TaskStatsSave, statsSaveInterval, false, op.StatsSaveDBTask)
+	Register(string(model.SettingKeyStatsSaveInterval), 0, false, op.StatsSaveDBTask)
 
 	// 注册渠道模型同步任务: 逐个同步开启了自动同步的渠道, 单个渠道失败不影响其余渠道。
-	syncIntervalHours, err := op.SettingGetInt(model.SettingKeySyncModelsInterval)
-	if err != nil {
-		log.Warnf("failed to get sync models interval: %v", err)
-		return
-	}
-	syncInterval := time.Duration(syncIntervalHours) * time.Hour
-	Register(string(model.SettingKeySyncModelsInterval), syncInterval, true, func() {
-		summary, failed, err := probe.SyncAllChannels(context.Background())
+	Register(string(model.SettingKeySyncModelsInterval), 0, true, func(ctx context.Context) {
+		summary, failed, err := probe.SyncAllChannels(ctx)
 		if err != nil {
 			log.Warnf("failed to sync channel models: %v", err)
 		}
@@ -57,4 +33,29 @@ func Init() {
 				summary.AddedModels, summary.MissingGrants, summary.RestoredGrants, failed)
 		}
 	})
+	return RefreshIntervals()
+}
+
+// RefreshIntervals 从持久化设置的缓存读取最新间隔，启动、编辑和导入设置共用此入口。
+func RefreshIntervals() error {
+	for _, setting := range model.DefaultSettings() {
+		unit := setting.Key.IntervalUnit()
+		if unit == 0 {
+			continue
+		}
+		value, err := op.SettingGetString(setting.Key)
+		if err != nil {
+			return err
+		}
+		setting.Value = value
+		if err := setting.Validate(); err != nil {
+			return err
+		}
+		interval, err := op.SettingGetInt(setting.Key)
+		if err != nil {
+			return err
+		}
+		Update(string(setting.Key), time.Duration(interval)*unit)
+	}
+	return nil
 }

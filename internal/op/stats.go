@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
+	"sort"
 	"sync"
 	"time"
 
@@ -17,6 +20,8 @@ import (
 
 var statsDailyCache model.StatsDaily
 var statsDailyCacheLock sync.RWMutex
+var statsDailyPending = make(map[string]model.StatsDaily)
+var statsSaveLock sync.Mutex // 同一时刻只允许一批快照落库，避免旧快照晚于新快照写入。
 
 var statsTotalCache model.StatsTotal
 var statsTotalCacheLock sync.RWMutex
@@ -37,8 +42,8 @@ var statsAPIKeyCache = cache.New[int, model.StatsAPIKey](16)
 var statsAPIKeyCacheNeedUpdate = make(map[int]struct{})
 var statsAPIKeyCacheNeedUpdateLock sync.Mutex
 
-func StatsSaveDBTask() {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+func StatsSaveDBTask(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	log.Debugf("stats save db task started")
 	startTime := time.Now()
@@ -52,6 +57,13 @@ func StatsSaveDBTask() {
 }
 
 func StatsSaveDB(ctx context.Context) error {
+	statsSaveLock.Lock()
+	defer statsSaveLock.Unlock()
+	return statsSaveDB(ctx)
+}
+
+// statsSaveDB 由持有 statsSaveLock 的保存、导出和导入流程调用。
+func statsSaveDB(ctx context.Context) error {
 	statsTotalCacheLock.RLock()
 	totalSnap := statsTotalCache
 	statsTotalCacheLock.RUnlock()
@@ -60,7 +72,10 @@ func StatsSaveDB(ctx context.Context) error {
 	}
 
 	statsDailyCacheLock.RLock()
-	dailySnap := statsDailyCache
+	dailySnapshots := maps.Clone(statsDailyPending)
+	if statsDailyCache.Date != "" {
+		dailySnapshots[statsDailyCache.Date] = statsDailyCache
+	}
 	statsDailyCacheLock.RUnlock()
 
 	statsHourlyCacheLock.RLock()
@@ -72,10 +87,19 @@ func StatsSaveDB(ctx context.Context) error {
 	keyIDs := drainDirtySet(&channelKeyStatsNeedUpdateLock, channelKeyStatsNeedUpdate)
 	apiKeyIDs := drainDirtySet(&statsAPIKeyCacheNeedUpdateLock, statsAPIKeyCacheNeedUpdate)
 
-	if err := persistStatsSnapshots(ctx, totalSnap, dailySnap, hourlyAll, channelIDs, modelIDs, keyIDs, apiKeyIDs); err != nil {
+	if err := db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return persistStatsSnapshots(tx, totalSnap, dailySnapshots, hourlyAll, channelIDs, modelIDs, keyIDs, apiKeyIDs)
+	}); err != nil {
 		restoreStatsDirty(channelIDs, modelIDs, keyIDs, apiKeyIDs)
 		return err
 	}
+	statsDailyCacheLock.Lock()
+	for date, snapshot := range dailySnapshots {
+		if statsDailyPending[date] == snapshot {
+			delete(statsDailyPending, date)
+		}
+	}
+	statsDailyCacheLock.Unlock()
 	return nil
 }
 
@@ -109,22 +133,22 @@ func restoreStatsDirty(channelIDs, modelIDs, keyIDs, apiKeyIDs []int) {
 }
 
 func persistStatsSnapshots(
-	ctx context.Context,
+	dbConn *gorm.DB,
 	totalSnap model.StatsTotal,
-	dailySnap model.StatsDaily,
+	dailySnapshots map[string]model.StatsDaily,
 	hourlyAll [24]model.StatsHourly,
 	channelIDs []int,
 	modelIDs []int,
 	keyIDs []int,
 	apiKeyIDs []int,
 ) error {
-	dbConn := db.GetDB().WithContext(ctx)
-
 	if result := dbConn.Save(&totalSnap); result.Error != nil {
 		return result.Error
 	}
-	if result := dbConn.Save(&dailySnap); result.Error != nil {
-		return result.Error
+	for _, daily := range dailySnapshots {
+		if err := dbConn.Save(&daily).Error; err != nil {
+			return err
+		}
 	}
 
 	todayDate := time.Now().Format("20060102")
@@ -195,46 +219,19 @@ func persistStatsSnapshots(
 	return nil
 }
 
-func statsSaveDBWithDailyOverride(ctx context.Context, dailyOverride model.StatsDaily) error {
-	statsTotalCacheLock.RLock()
-	totalSnap := statsTotalCache
-	statsTotalCacheLock.RUnlock()
-	if totalSnap.ID == 0 {
-		totalSnap.ID = 1
-	}
-
-	statsHourlyCacheLock.RLock()
-	hourlyAll := statsHourlyCache
-	statsHourlyCacheLock.RUnlock()
-
-	channelIDs := drainDirtySet(&channelStatsNeedUpdateLock, channelStatsNeedUpdate)
-	modelIDs := drainDirtySet(&channelModelStatsNeedUpdateLock, channelModelStatsNeedUpdate)
-	keyIDs := drainDirtySet(&channelKeyStatsNeedUpdateLock, channelKeyStatsNeedUpdate)
-	apiKeyIDs := drainDirtySet(&statsAPIKeyCacheNeedUpdateLock, statsAPIKeyCacheNeedUpdate)
-
-	if err := persistStatsSnapshots(ctx, totalSnap, dailyOverride, hourlyAll, channelIDs, modelIDs, keyIDs, apiKeyIDs); err != nil {
-		restoreStatsDirty(channelIDs, modelIDs, keyIDs, apiKeyIDs)
-		return err
-	}
-	return nil
-}
-
-func StatsDailyUpdate(ctx context.Context, metrics model.StatsMetrics) error {
+func StatsDailyUpdate(metrics model.StatsMetrics) {
 	today := time.Now().Format("20060102")
-
 	statsDailyCacheLock.Lock()
-	if statsDailyCache.Date == today {
-		statsDailyCache.StatsMetrics.Add(metrics)
-		statsDailyCacheLock.Unlock()
-		return nil
+	defer statsDailyCacheLock.Unlock()
+	if statsDailyCache.Date != today {
+		if statsDailyCache.Date != "" {
+			statsDailyPending[statsDailyCache.Date] = statsDailyCache
+		}
+		statsDailyCache = statsDailyPending[today]
+		statsDailyCache.Date = today
+		delete(statsDailyPending, today)
 	}
-
-	prevDaily := statsDailyCache
-	statsDailyCache = model.StatsDaily{Date: today}
 	statsDailyCache.StatsMetrics.Add(metrics)
-	statsDailyCacheLock.Unlock()
-
-	return statsSaveDBWithDailyOverride(ctx, prevDaily)
 }
 
 func StatsTotalUpdate(metrics model.StatsMetrics) error {
@@ -250,7 +247,7 @@ func StatsTotalUpdate(metrics model.StatsMetrics) error {
 func StatsHourlyUpdate(metrics model.StatsMetrics) error {
 	now := time.Now()
 	nowHour := now.Hour()
-	todayDate := time.Now().Format("20060102")
+	todayDate := now.Format("20060102")
 
 	statsHourlyCacheLock.Lock()
 	defer statsHourlyCacheLock.Unlock()
@@ -311,6 +308,9 @@ func ChannelStatsUpdate(channelID int, metrics model.StatsMetrics) error {
 func StatsAPIKeyUpdate(apiKeyID int, metrics model.StatsMetrics) error {
 	statsAPIKeyCacheNeedUpdateLock.Lock()
 	defer statsAPIKeyCacheNeedUpdateLock.Unlock()
+	if _, exists := apiKeyCache.Get(apiKeyID); !exists {
+		return nil
+	}
 	apiKeyCache, ok := statsAPIKeyCache.Get(apiKeyID)
 	if !ok {
 		apiKeyCache = model.StatsAPIKey{
@@ -323,18 +323,6 @@ func StatsAPIKeyUpdate(apiKeyID int, metrics model.StatsMetrics) error {
 	return nil
 }
 
-func StatsAPIKeyDel(id int) error {
-	statsAPIKeyCacheNeedUpdateLock.Lock()
-	if _, ok := statsAPIKeyCache.Get(id); !ok {
-		statsAPIKeyCacheNeedUpdateLock.Unlock()
-		return nil
-	}
-	statsAPIKeyCache.Del(id)
-	delete(statsAPIKeyCacheNeedUpdate, id)
-	statsAPIKeyCacheNeedUpdateLock.Unlock()
-	return db.GetDB().Delete(&model.StatsAPIKey{}, id).Error
-}
-
 func StatsTotalGet() model.StatsTotal {
 	statsTotalCacheLock.RLock()
 	defer statsTotalCacheLock.RUnlock()
@@ -345,18 +333,7 @@ func StatsAPIKeyGet(id int) model.StatsAPIKey {
 	if stats, ok := statsAPIKeyCache.Get(id); ok {
 		return stats
 	}
-	statsAPIKeyCacheNeedUpdateLock.Lock()
-	defer statsAPIKeyCacheNeedUpdateLock.Unlock()
-	stats, ok := statsAPIKeyCache.Get(id)
-	if !ok {
-		tmp := model.StatsAPIKey{
-			APIKeyID: id,
-		}
-		statsAPIKeyCache.Set(id, tmp)
-		statsAPIKeyCacheNeedUpdate[id] = struct{}{}
-		return tmp
-	}
-	return stats
+	return model.StatsAPIKey{APIKeyID: id}
 }
 
 func StatsAPIKeyList() []model.StatsAPIKey {
@@ -364,13 +341,14 @@ func StatsAPIKeyList() []model.StatsAPIKey {
 	for _, v := range statsAPIKeyCache.GetAll() {
 		apiKeys = append(apiKeys, v)
 	}
+	sort.Slice(apiKeys, func(i, j int) bool { return apiKeys[i].APIKeyID < apiKeys[j].APIKeyID })
 	return apiKeys
 }
 
 func StatsHourlyGet() []model.StatsHourly {
 	now := time.Now()
 	currentHour := now.Hour()
-	todayDate := time.Now().Format("20060102")
+	todayDate := now.Format("20060102")
 
 	statsHourlyCacheLock.RLock()
 	defer statsHourlyCacheLock.RUnlock()
@@ -394,10 +372,30 @@ func StatsHourlyGet() []model.StatsHourly {
 // StatsGetDaily 返回 since 当天及其之后的每日统计, since 为 20060102 格式。
 // 只取窗口内的数据: 界面上的热力图与趋势图都有固定跨度, 全量返回会随运行时长无界增长。
 func StatsGetDaily(ctx context.Context, since string) ([]model.StatsDaily, error) {
+	statsSaveLock.Lock()
+	defer statsSaveLock.Unlock()
 	var statsDaily []model.StatsDaily
 	result := db.GetDB().WithContext(ctx).Where("date >= ?", since).Order("date").Find(&statsDaily)
 	if result.Error != nil {
 		return nil, result.Error
+	}
+	byDate := make(map[string]model.StatsDaily, len(statsDaily)+1)
+	for _, daily := range statsDaily {
+		byDate[daily.Date] = daily
+	}
+	statsDailyCacheLock.RLock()
+	for date, daily := range statsDailyPending {
+		if date >= since {
+			byDate[date] = daily
+		}
+	}
+	if statsDailyCache.Date >= since {
+		byDate[statsDailyCache.Date] = statsDailyCache
+	}
+	statsDailyCacheLock.RUnlock()
+	statsDaily = make([]model.StatsDaily, 0, len(byDate))
+	for _, date := range slices.Sorted(maps.Keys(byDate)) {
+		statsDaily = append(statsDaily, byDate[date])
 	}
 	return statsDaily, nil
 }
@@ -434,6 +432,7 @@ func statsRefreshCache(ctx context.Context) error {
 
 	statsDailyCacheLock.Lock()
 	statsDailyCache = loadedDaily
+	clear(statsDailyPending)
 	statsDailyCacheLock.Unlock()
 
 	statsTotalCacheLock.Lock()

@@ -10,42 +10,8 @@ import (
 	"github.com/shengmingboai/octopus/internal/model"
 	"github.com/shengmingboai/octopus/internal/op"
 	"github.com/shengmingboai/octopus/internal/server/auth"
-	"github.com/shengmingboai/octopus/internal/server/middleware"
 	"github.com/shengmingboai/octopus/internal/server/resp"
-	"github.com/shengmingboai/octopus/internal/server/router"
 )
-
-func init() {
-	router.NewGroupRouter("/api/v1/apikey").
-		Use(middleware.Auth()).
-		Use(middleware.RequireJSON()).
-		AddRoute(
-			router.NewRoute("/create", http.MethodPost).
-				Handle(createAPIKey),
-		).
-		AddRoute(
-			router.NewRoute("/list", http.MethodGet).
-				Handle(listAPIKey),
-		).
-		AddRoute(
-			router.NewRoute("/update", http.MethodPost).
-				Handle(updateAPIKey),
-		).
-		AddRoute(
-			router.NewRoute("/delete/:id", http.MethodDelete).
-				Handle(deleteAPIKey),
-		)
-	router.NewGroupRouter("/api/v1/apikey").
-		Use(middleware.APIKeyAuth()).
-		AddRoute(
-			router.NewRoute("/stats", http.MethodGet).
-				Handle(getStatsAPIKeyById),
-		).
-		AddRoute(
-			router.NewRoute("/login", http.MethodGet).
-				Handle(loginAPIKey),
-		)
-}
 
 func createAPIKey(c *gin.Context) {
 	var req model.APIKey

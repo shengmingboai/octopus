@@ -7,34 +7,8 @@ import (
 	"github.com/shengmingboai/octopus/internal/model"
 	"github.com/shengmingboai/octopus/internal/op"
 	"github.com/shengmingboai/octopus/internal/server/auth"
-	"github.com/shengmingboai/octopus/internal/server/middleware"
 	"github.com/shengmingboai/octopus/internal/server/resp"
-	"github.com/shengmingboai/octopus/internal/server/router"
 )
-
-func init() {
-	router.NewGroupRouter("/api/v1/user").
-		Use(middleware.RequireJSON()).
-		AddRoute(
-			router.NewRoute("/login", http.MethodPost).
-				Handle(login),
-		)
-	router.NewGroupRouter("/api/v1/user").
-		Use(middleware.Auth()).
-		Use(middleware.RequireJSON()).
-		AddRoute(
-			router.NewRoute("/change-password", http.MethodPost).
-				Handle(changePassword),
-		).
-		AddRoute(
-			router.NewRoute("/change-username", http.MethodPost).
-				Handle(changeUsername),
-		).
-		AddRoute(
-			router.NewRoute("/status", http.MethodGet).
-				Handle(status),
-		)
-}
 
 func login(c *gin.Context) {
 	var user model.UserLogin

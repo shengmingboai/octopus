@@ -2,6 +2,7 @@ package relay
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -219,7 +220,7 @@ func (r *RequestState) finishLocked(usage *llm.Usage) {
 	}
 	_ = op.StatsTotalUpdate(metrics)
 	_ = op.StatsHourlyUpdate(metrics)
-	_ = op.StatsDailyUpdate(context.Background(), metrics)
+	op.StatsDailyUpdate(metrics)
 	if r.apiKeyID > 0 {
 		_ = op.StatsAPIKeyUpdate(r.apiKeyID, metrics)
 	}
@@ -264,9 +265,10 @@ func usageMetrics(modelName string, usage *llm.Usage) model.StatsMetrics {
 
 // publishRequestLocked 非阻塞发布最新请求状态, 连接拥塞时关闭它并交给客户端重连获取全量快照; 调用方必须持有锁。
 func publishRequestLocked(request *RequestState) {
+	message := request.snapshot()
 	for stream := range watchers {
 		select {
-		case stream <- *request:
+		case stream <- message:
 		default:
 			delete(watchers, stream)
 			close(stream)
@@ -285,10 +287,20 @@ func OpenRequestStream() ([]RequestState, chan RequestState) {
 
 	snapshot := make([]RequestState, 0, len(requests))
 	for _, request := range requests {
-		snapshot = append(snapshot, *request)
+		snapshot = append(snapshot, request.snapshot())
 	}
 	sort.Slice(snapshot, func(i, j int) bool { return snapshot[i].ID > snapshot[j].ID })
 	return snapshot, stream
+}
+
+// snapshot 隔离会在后续轮次原地更新的切片，发布后的消息只读。
+func (r *RequestState) snapshot() RequestState {
+	state := *r
+	state.Rounds = slices.Clone(r.Rounds)
+	state.body = ""
+	state.responseBody = ""
+	state.cancel = nil
+	return state
 }
 
 // CloseRequestStream 注销并关闭指定请求状态流连接。

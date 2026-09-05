@@ -9,50 +9,8 @@ import (
 	"github.com/shengmingboai/octopus/internal/model"
 	"github.com/shengmingboai/octopus/internal/op"
 	"github.com/shengmingboai/octopus/internal/price"
-	"github.com/shengmingboai/octopus/internal/server/middleware"
 	"github.com/shengmingboai/octopus/internal/server/resp"
-	"github.com/shengmingboai/octopus/internal/server/router"
 )
-
-func init() {
-	router.NewGroupRouter("/api/v1/model").
-		Use(middleware.Auth()).
-		Use(middleware.RequireJSON()).
-		AddRoute(
-			router.NewRoute("/list", http.MethodGet).
-				Handle(listLLM),
-		).
-		AddRoute(
-			router.NewRoute("/create", http.MethodPost).
-				Handle(createLLM),
-		).
-		AddRoute(
-			router.NewRoute("/update", http.MethodPost).
-				Handle(updateLLM),
-		).
-		AddRoute(
-			router.NewRoute("/delete", http.MethodPost).
-				Handle(deleteLLM),
-		).
-		AddRoute(
-			router.NewRoute("/update-price", http.MethodPost).
-				Handle(updateLLMPrice),
-		).
-		AddRoute(
-			router.NewRoute("/rebuild-price", http.MethodPost).
-				Handle(rebuildLLMPrice),
-		).
-		AddRoute(
-			router.NewRoute("/last-update-time", http.MethodGet).
-				Handle(getLastUpdateTime),
-		)
-	router.NewGroupRouter("/v1").
-		Use(middleware.APIKeyAuth()).
-		AddRoute(
-			router.NewRoute("/models", http.MethodGet).
-				Handle(getModelList),
-		)
-}
 
 func getModelList(c *gin.Context) {
 	models := op.GroupListModel()

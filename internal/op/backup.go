@@ -86,6 +86,11 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 		}
 		dump.Channels[i].ChannelConfig = config
 	}
+	for _, setting := range dump.Settings {
+		if err := setting.Validate(); err != nil {
+			return nil, fmt.Errorf("import setting: %w", err)
+		}
+	}
 
 	conn := db.GetDB().WithContext(ctx)
 	res := &model.DBImportResult{RowsAffected: map[string]int64{}}

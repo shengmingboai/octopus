@@ -1,8 +1,8 @@
 import { Fragment, useId, useMemo } from 'react';
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts';
+import { Area, AreaChart, CartesianGrid, Tooltip, XAxis, YAxis } from 'recharts';
 import { useTranslations } from 'use-intl';
 import { useStatsDaily, useStatsHourly, type StatsMetricsFormatted } from '@/api/stats';
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
+import { ChartContainer, ChartTooltipContent } from '@/components/ui/chart';
 import { AnimatedNumber } from '@/components/common/AnimatedNumber';
 import { formatCount, formatMoney } from '@/lib/utils';
 import { useTheme } from '@/provider/theme';
@@ -112,7 +112,7 @@ export function StatsChart() {
                             return `${formatted.formatted.value}${formatted.formatted.unit}`;
                         }}
                     />
-                    <ChartTooltip cursor={false} content={<ChartTooltipContent indicator="line" />} />
+                    <Tooltip cursor={false} content={<ChartTooltipContent indicator="line" />} />
                     <Area type="monotone" dataKey="value" stroke={chartColor} fill={`url(#${gradientId})`} />
                 </AreaChart>
             </ChartContainer>

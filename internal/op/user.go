@@ -1,69 +1,97 @@
 package op
 
 import (
+	"errors"
 	"fmt"
+	"strings"
+	"sync"
 
 	"github.com/charmbracelet/log"
 	"github.com/shengmingboai/octopus/internal/db"
 	"github.com/shengmingboai/octopus/internal/model"
+	"gorm.io/gorm"
 )
 
 var userCache model.User
+var userMu sync.RWMutex
 
 func UserInit() error {
-	if err := db.GetDB().First(&userCache).Error; err == nil {
+	userMu.Lock()
+	defer userMu.Unlock()
+	var user model.User
+	if err := db.GetDB().First(&user).Error; err == nil {
+		userCache = user
 		return nil
-	}
-	userCache.Username = "admin"
-	userCache.Password = "admin"
-	if err := userCache.HashPassword(); err != nil {
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
 	}
-	if err := db.GetDB().Create(&userCache).Error; err != nil {
+	user = model.User{Username: "admin", Password: "admin"}
+	if err := user.HashPassword(); err != nil {
 		return err
 	}
+	if err := db.GetDB().Create(&user).Error; err != nil {
+		return err
+	}
+	userCache = user
 	log.Infof("initial user: admin,password: admin")
 	return nil
 }
 
 func UserChangePassword(oldPassword, newPassword string) error {
-	if err := userCache.ComparePassword(oldPassword); err != nil {
+	userMu.Lock()
+	defer userMu.Unlock()
+	user := userCache
+	if newPassword == "" {
+		return fmt.Errorf("new password is required")
+	}
+	if err := user.ComparePassword(oldPassword); err != nil {
 		return fmt.Errorf("incorrect old password: %w", err)
 	}
 
-	userCache.Password = newPassword
-	if err := userCache.HashPassword(); err != nil {
+	user.Password = newPassword
+	if err := user.HashPassword(); err != nil {
 		return fmt.Errorf("failed to hash new password: %w", err)
 	}
 
-	if err := db.GetDB().Model(&userCache).Update("password", userCache.Password).Error; err != nil {
+	if err := db.GetDB().Model(&user).Update("password", user.Password).Error; err != nil {
 		return fmt.Errorf("failed to update password: %w", err)
 	}
-
+	userCache = user
 	return nil
 }
 
 func UserChangeUsername(newUsername string) error {
+	userMu.Lock()
+	defer userMu.Unlock()
+	newUsername = strings.TrimSpace(newUsername)
+	if newUsername == "" {
+		return fmt.Errorf("new username is required")
+	}
 	if userCache.Username == newUsername {
 		return fmt.Errorf("new username is the same as the old username")
 	}
-	userCache.Username = newUsername
-	if err := db.GetDB().Model(&userCache).Update("username", userCache.Username).Error; err != nil {
+	user := userCache
+	user.Username = newUsername
+	if err := db.GetDB().Model(&user).Update("username", user.Username).Error; err != nil {
 		return fmt.Errorf("failed to update username: %w", err)
 	}
+	userCache = user
 	return nil
 }
 
 func UserVerify(username, password string) error {
-	if username != userCache.Username {
+	user := UserGet()
+	if username != user.Username {
 		return fmt.Errorf("incorrect username")
 	}
-	if err := userCache.ComparePassword(password); err != nil {
+	if err := user.ComparePassword(password); err != nil {
 		return fmt.Errorf("incorrect password")
 	}
 	return nil
 }
 
 func UserGet() model.User {
+	userMu.RLock()
+	defer userMu.RUnlock()
 	return userCache
 }

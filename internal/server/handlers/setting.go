@@ -4,40 +4,15 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/shengmingboai/octopus/internal/model"
 	"github.com/shengmingboai/octopus/internal/op"
-	"github.com/shengmingboai/octopus/internal/server/middleware"
 	"github.com/shengmingboai/octopus/internal/server/resp"
-	"github.com/shengmingboai/octopus/internal/server/router"
 	"github.com/shengmingboai/octopus/internal/task"
 )
-
-func init() {
-	router.NewGroupRouter("/api/v1/setting").
-		Use(middleware.Auth()).
-		AddRoute(
-			router.NewRoute("/list", http.MethodGet).
-				Handle(getSettingList),
-		).
-		AddRoute(
-			router.NewRoute("/set", http.MethodPost).
-				Use(middleware.RequireJSON()).
-				Handle(setSetting),
-		).
-		AddRoute(
-			router.NewRoute("/export", http.MethodGet).
-				Handle(exportDB),
-		).
-		AddRoute(
-			router.NewRoute("/import", http.MethodPost).
-				Handle(importDB),
-		)
-}
 
 func getSettingList(c *gin.Context) {
 	settings, err := op.SettingList(c.Request.Context())
@@ -62,22 +37,9 @@ func setSetting(c *gin.Context) {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	switch setting.Key {
-	case model.SettingKeyModelInfoUpdateInterval:
-		hours, err := strconv.Atoi(setting.Value)
-		if err != nil {
-			resp.Error(c, http.StatusBadRequest, err.Error())
-			return
-		}
-		task.Update(string(setting.Key), time.Duration(hours)*time.Hour)
-	case model.SettingKeySyncModelsInterval:
-		hours, err := strconv.Atoi(setting.Value)
-		if err != nil {
-			resp.Error(c, http.StatusBadRequest, err.Error())
-			return
-		}
-		// 间隔为 0 表示关闭自动同步, 任务随之删除。
-		task.Update(string(setting.Key), time.Duration(hours)*time.Hour)
+	if err := task.RefreshIntervals(); err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
 	}
 	resp.Success(c, setting)
 }
@@ -161,6 +123,10 @@ func importDB(c *gin.Context) {
 	}
 
 	if err := op.InitCache(); err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := task.RefreshIntervals(); err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}

@@ -1,22 +1,26 @@
 package server
 
 import (
-	"fmt"
+	"context"
+	"errors"
+	"net"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/charmbracelet/log"
 	"github.com/gin-gonic/gin"
 	"github.com/shengmingboai/octopus/internal/conf"
-	_ "github.com/shengmingboai/octopus/internal/server/handlers"
+	"github.com/shengmingboai/octopus/internal/server/handlers"
 	"github.com/shengmingboai/octopus/internal/server/middleware"
 	"github.com/shengmingboai/octopus/internal/server/resp"
-	"github.com/shengmingboai/octopus/internal/server/router"
 	"github.com/shengmingboai/octopus/static"
 )
 
-var httpSrv http.Server
+var httpSrv *http.Server
+var cancelRequests context.CancelFunc
 
-func Start() error {
+func newRouter() *gin.Engine {
 	if conf.IsDebug() {
 		gin.SetMode(gin.DebugMode)
 	} else {
@@ -35,14 +39,26 @@ func Start() error {
 	r.Use(middleware.Cors())
 	r.Use(middleware.StaticEmbed("/", static.StaticFS))
 
-	if err := router.RegisterAll(r); err != nil {
+	handlers.RegisterRoutes(r)
+	return r
+}
+
+func Start() error {
+	addr := net.JoinHostPort(conf.AppConfig.Server.Host, strconv.Itoa(conf.AppConfig.Server.Port))
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
 		return err
 	}
-
-	httpSrv.Addr = fmt.Sprintf("%s:%d", conf.AppConfig.Server.Host, conf.AppConfig.Server.Port)
-	httpSrv.Handler = r
+	ctx, cancel := context.WithCancel(context.Background())
+	cancelRequests = cancel
+	httpSrv = &http.Server{
+		Addr:        addr,
+		Handler:     newRouter(),
+		BaseContext: func(net.Listener) context.Context { return ctx },
+	}
+	srv := httpSrv
 	go func() {
-		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := srv.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Errorf("http server listen and serve error: %v", err)
 		}
 	}()
@@ -50,5 +66,15 @@ func Start() error {
 }
 
 func Close() error {
-	return httpSrv.Close()
+	if httpSrv == nil {
+		return nil
+	}
+	// 先取消长连接和上游请求，等待处理器完成统计后再关闭存储。
+	cancelRequests()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := httpSrv.Shutdown(ctx); err != nil {
+		return errors.Join(err, httpSrv.Close())
+	}
+	return nil
 }

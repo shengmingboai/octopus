@@ -13,60 +13,8 @@ import (
 	"github.com/shengmingboai/octopus/internal/op"
 	"github.com/shengmingboai/octopus/internal/price"
 	"github.com/shengmingboai/octopus/internal/probe"
-	"github.com/shengmingboai/octopus/internal/server/middleware"
 	"github.com/shengmingboai/octopus/internal/server/resp"
-	"github.com/shengmingboai/octopus/internal/server/router"
 )
-
-func init() {
-	router.NewGroupRouter("/api/v1/channel").
-		Use(middleware.Auth()).
-		Use(middleware.RequireJSON()).
-		AddRoute(
-			router.NewRoute("/detail/:id", http.MethodGet).
-				Handle(getChannelDetail),
-		).
-		AddRoute(
-			router.NewRoute("/stats", http.MethodGet).
-				Handle(listChannelStats),
-		).
-		AddRoute(
-			router.NewRoute("/grants", http.MethodGet).
-				Handle(listChannelGrant),
-		).
-		AddRoute(
-			router.NewRoute("/create", http.MethodPost).
-				Handle(createChannel),
-		).
-		AddRoute(
-			router.NewRoute("/update", http.MethodPost).
-				Handle(updateChannel),
-		).
-		AddRoute(
-			router.NewRoute("/enable", http.MethodPost).
-				Handle(enableChannel),
-		).
-		AddRoute(
-			router.NewRoute("/delete/:id", http.MethodDelete).
-				Handle(deleteChannel),
-		).
-		AddRoute(
-			router.NewRoute("/fetch-model", http.MethodPost).
-				Handle(fetchModel),
-		).
-		AddRoute(
-			router.NewRoute("/sync/:id", http.MethodPost).
-				Handle(syncChannelModels),
-		).
-		AddRoute(
-			router.NewRoute("/sync-all", http.MethodPost).
-				Handle(syncAllChannels),
-		).
-		AddRoute(
-			router.NewRoute("/last-sync-time", http.MethodGet).
-				Handle(getLastSyncTime),
-		)
-}
 
 // getChannelDetail 返回单个渠道的完整配置, 供编辑表单打开时读取。
 // 与列表分开: 整份配置带着路径, 代理与凭据明文, 只有正在编辑的那一个渠道用得上。

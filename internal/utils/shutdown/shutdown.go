@@ -3,6 +3,7 @@ package shutdown
 import (
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 )
 
@@ -14,10 +15,12 @@ type logger interface {
 
 var ilog logger
 var funcs []func() error
+var once sync.Once
 
 func Init(log logger) {
 	ilog = log
 	funcs = make([]func() error, 0)
+	once = sync.Once{}
 }
 
 func Register(fn func() error) {
@@ -27,26 +30,19 @@ func Register(fn func() error) {
 func Listen() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	defer signal.Stop(quit)
 	ilog.Infof("Program started, press Ctrl+C to exit")
 	sig := <-quit
 	ilog.Warnf("Received exit signal: %v", sig)
-	if len(funcs) == 0 {
-		return
-	}
-	for i := len(funcs) - 1; i >= 0; i-- {
-		if err := funcs[i](); err != nil {
-			ilog.Errorf("Closing functions execution failed: %v", err)
-		}
-	}
-	ilog.Infof("Shutdown completed successfully")
-	os.Exit(0)
 }
 
 func Shutdown() {
-	for i := len(funcs) - 1; i >= 0; i-- {
-		if err := funcs[i](); err != nil {
-			ilog.Errorf("Closing functions execution failed: %v", err)
+	once.Do(func() {
+		for i := len(funcs) - 1; i >= 0; i-- {
+			if err := funcs[i](); err != nil {
+				ilog.Errorf("Closing functions execution failed: %v", err)
+			}
 		}
-	}
-	ilog.Infof("Shutdown completed successfully")
+		ilog.Infof("Shutdown completed")
+	})
 }

@@ -32,6 +32,10 @@ func SettingGetString(key model.SettingKey) (string, error) {
 }
 
 func SettingSetString(key model.SettingKey, value string) error {
+	setting := model.Setting{Key: key, Value: value}
+	if err := setting.Validate(); err != nil {
+		return err
+	}
 	valueCache, ok := settingCache.Get(key)
 	if !ok {
 		return fmt.Errorf("setting not found")
@@ -67,26 +71,7 @@ func SettingGetBool(key model.SettingKey) (bool, error) {
 }
 
 func SettingSetInt(key model.SettingKey, value int) error {
-	valueCache, ok := settingCache.Get(key)
-	if !ok {
-		return fmt.Errorf("setting not found")
-	}
-	valueCacheNum, err := strconv.Atoi(valueCache)
-	if err != nil {
-		return fmt.Errorf("failed to set setting: %w", err)
-	}
-	if valueCacheNum == value {
-		return nil
-	}
-	result := db.GetDB().Model(&model.Setting{Key: key}).Update("Value", value)
-	if result.Error != nil {
-		return fmt.Errorf("failed to set setting: %w", result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return fmt.Errorf("failed to set setting, key not found")
-	}
-	settingCache.Set(key, strconv.Itoa(value))
-	return nil
+	return SettingSetString(key, strconv.Itoa(value))
 }
 
 func settingRefreshCache(ctx context.Context) error {

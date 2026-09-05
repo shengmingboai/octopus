@@ -24,13 +24,13 @@ export const SettingKey = {
 
 /**
  * 获取 Setting 列表 Hook
- * 
+ *
  * @example
  * const { data: settings, isLoading, error } = useSettingList();
- * 
+ *
  * if (isLoading) return <Loading />;
  * if (error) return <Error message={error.message} />;
- * 
+ *
  * settings?.forEach(setting => console.log(setting.key, setting.value));
  */
 export function useSettingList() {
@@ -44,10 +44,10 @@ export function useSettingList() {
 
 /**
  * 设置 Setting Hook
- * 
+ *
  * @example
  * const setSetting = useSetSetting();
- * 
+ *
  * setSetting.mutate({
  *   key: 'theme',
  *   value: 'dark',
@@ -59,7 +59,11 @@ export function useSetSetting() {
     return useMutation({
         mutationFn: (data: Setting) =>
             apiRequest<Setting>('/api/v1/setting/set', { method: 'POST', body: data }),
-        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings', 'list'] }),
+        onSuccess: (saved) => {
+            queryClient.setQueryData<Setting[]>(['settings', 'list'], (settings) =>
+                settings?.map((setting) => setting.key === saved.key ? saved : setting));
+            return queryClient.invalidateQueries({ queryKey: ['settings', 'list'] });
+        },
     });
 }
 

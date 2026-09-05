@@ -11,40 +11,8 @@ import (
 	"github.com/shengmingboai/octopus/internal/model"
 	"github.com/shengmingboai/octopus/internal/op"
 	"github.com/shengmingboai/octopus/internal/relay"
-	"github.com/shengmingboai/octopus/internal/server/middleware"
 	"github.com/shengmingboai/octopus/internal/server/resp"
-	"github.com/shengmingboai/octopus/internal/server/router"
 )
-
-func init() {
-	router.NewGroupRouter("/api/v1/group").
-		Use(middleware.Auth()).
-		Use(middleware.RequireJSON()).
-		AddRoute(
-			router.NewRoute("/list", http.MethodGet).
-				Handle(getGroupList),
-		).
-		AddRoute(
-			router.NewRoute("/get/:id", http.MethodGet).
-				Handle(getGroup),
-		).
-		AddRoute(
-			router.NewRoute("/events", http.MethodGet).
-				Handle(streamGroupEvents),
-		).
-		AddRoute(
-			router.NewRoute("/create", http.MethodPost).
-				Handle(createGroup),
-		).
-		AddRoute(
-			router.NewRoute("/update/:id", http.MethodPost).
-				Handle(updateGroup),
-		).
-		AddRoute(
-			router.NewRoute("/delete/:id", http.MethodDelete).
-				Handle(deleteGroup),
-		)
-}
 
 // groupResponse 是分组读取响应: 分组配置加其当前实时路由状态。
 // 路由状态由 Relay 持有且不落库, 不属于分组配置, 故在此拼接而不作为 model.Group 的字段;

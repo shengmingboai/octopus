@@ -32,43 +32,46 @@ type Config struct {
 var AppConfig Config
 
 func Load(path string) error {
+	config := viper.New()
 	if path != "" {
-		viper.SetConfigFile(path)
+		config.SetConfigFile(path)
 	} else {
-		viper.SetConfigName("config")
-		viper.SetConfigType("json")
-		viper.AddConfigPath("data")
+		config.SetConfigName("config")
+		config.SetConfigType("json")
+		config.AddConfigPath("data")
 	}
 
-	viper.AutomaticEnv()
-	viper.SetEnvPrefix(APP_NAME)
-	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	config.AutomaticEnv()
+	config.SetEnvPrefix(APP_NAME)
+	config.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
-	setDefaults()
+	setDefaults(config)
 
-	if err := viper.ReadInConfig(); err == nil {
-		log.Infof("Using config file: %s", viper.ConfigFileUsed())
+	if err := config.ReadInConfig(); err == nil {
+		log.Infof("Using config file: %s", config.ConfigFileUsed())
 	} else {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
 			log.Infof("Config file not found, creating default config")
 			if err := os.MkdirAll("data", 0755); err != nil {
-				log.Errorf("Failed to create data directory: %v", err)
+				return fmt.Errorf("create data directory: %w", err)
 			}
-			if err := viper.SafeWriteConfigAs("data/config.json"); err != nil {
-				log.Errorf("Failed to create default config: %v", err)
+			if err := config.SafeWriteConfigAs("data/config.json"); err != nil {
+				return fmt.Errorf("create default config: %w", err)
 			}
 		} else {
 			return fmt.Errorf("error reading config file: %w", err)
 		}
 	}
 
-	if err := viper.Unmarshal(&AppConfig); err != nil {
+	var loaded Config
+	if err := config.Unmarshal(&loaded); err != nil {
 		return fmt.Errorf("unable to decode config into struct: %w", err)
 	}
+	AppConfig = loaded
 	return nil
 }
 
-func setDefaults() {
+func setDefaults(viper *viper.Viper) {
 	viper.SetDefault("server.host", "0.0.0.0")
 	viper.SetDefault("server.port", 8080)
 	viper.SetDefault("database.type", "sqlite")

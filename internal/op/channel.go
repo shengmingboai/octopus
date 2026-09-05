@@ -99,14 +99,9 @@ func ChannelUpdate(detail *model.ChannelDetail, ctx context.Context) (*model.Cha
 	}
 
 	if err := db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// 逐列点名而不整行覆盖: 全量提交下 enabled 置假与被清空的可选字段都必须落库, 按零值跳过会写不进去;
-		// 而统计列由转发累加, 不在提交范围内, 整行覆盖会把它抹回提交时的旧值。
+		// 配置结构本身就是可写字段集合；包含零值，但不包含统计和关联表。
 		if err := tx.Model(&model.Channel{}).Where("id = ?", detail.ID).
-			Select("name", "dialect", "enabled", "base_url",
-				"openai_chat_completion_path", "openai_response_path", "anthropic_message_path",
-				"proxy", "channel_proxy", "custom_header", "param_override", "match_regex",
-				"auto_sync_models", "auto_group").
-			Updates(&model.Channel{ChannelConfig: detail.ChannelConfig}).Error; err != nil {
+			Select("*").Updates(&detail.ChannelConfig).Error; err != nil {
 			return fmt.Errorf("failed to update channel: %w", err)
 		}
 		return syncChannelChildren(tx, detail.ID, detail)
@@ -214,15 +209,18 @@ func syncChannelChildren(tx *gorm.DB, channelID int, detail *model.ChannelDetail
 
 // ChannelEnabled 更新渠道启用状态。
 func ChannelEnabled(id int, enabled bool, ctx context.Context) error {
-	channel, ok := channelCache.Get(id)
-	if !ok {
+	if _, ok := channelCache.Get(id); !ok {
 		return fmt.Errorf("channel not found")
 	}
 	if err := db.GetDB().WithContext(ctx).Model(&model.Channel{}).Where("id = ?", id).Update("enabled", enabled).Error; err != nil {
 		return err
 	}
-	channel.Enabled = enabled
-	channelCache.Set(id, channel)
+	channelStatsNeedUpdateLock.Lock()
+	defer channelStatsNeedUpdateLock.Unlock()
+	if channel, ok := channelCache.Get(id); ok {
+		channel.Enabled = enabled
+		channelCache.Set(id, channel)
+	}
 	return nil
 }
 
@@ -305,12 +303,19 @@ func ChannelGrantGet(id int) (model.ChannelGrant, error) {
 	if !ok {
 		return model.ChannelGrant{}, fmt.Errorf("channel key %d not found", grant.ChannelKeyID)
 	}
-	if !channelKey.Enabled {
-		return model.ChannelGrant{}, fmt.Errorf("channel key %d is disabled", channelKey.ID)
+	channel, ok := channelCache.Get(channelModel.ChannelID)
+	if !ok || !channelGrantAvailable(grant, channel, channelKey) {
+		return model.ChannelGrant{}, fmt.Errorf("channel grant %d is unavailable", grant.ID)
 	}
 	grant.ChannelModel = &channelModel
 	grant.ChannelKey = &channelKey
 	return grant, nil
+}
+
+// channelGrantAvailable 是选路、成员展示和授权候选共用的可用性规则。
+func channelGrantAvailable(grant model.ChannelGrant, channel model.Channel, key model.ChannelKey) bool {
+	return !grant.Missing && grant.Protocols != 0 && grant.Protocols&^definedProtocols == 0 &&
+		channel.Enabled && key.Enabled && key.ChannelID == channel.ID
 }
 
 // ChannelGrantCandidates 返回全部渠道授权及其展示字段, 供分组页选取成员。
@@ -336,7 +341,7 @@ func ChannelGrantCandidates() []model.ChannelGrantCandidate {
 			KeyName:     channelKey.Name,
 			Protocols:   grant.Protocols,
 			Missing:     grant.Missing,
-			Available:   channel.Enabled && channelKey.Enabled,
+			Available:   channelGrantAvailable(grant, channel, channelKey),
 		})
 	}
 	// 按渠道, 模型, 凭据三级定序: 分组页按这三级组织候选且不提供排序开关, 顺序须由此处定稿。

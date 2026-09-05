@@ -1,52 +1,27 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslations } from 'use-intl';
 import { Clock, DatabaseBackup, DollarSign, RefreshCw } from 'lucide-react';
-import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { useSettingList, useSetSetting, SettingKey } from '@/api/setting';
+import { SettingKey } from '@/api/setting';
+import { SettingInput } from './SettingInput';
 import { useRebuildModelPrice, useUpdateModelPrice, useLastUpdateTime } from '@/api/model';
 import { toast } from 'sonner';
 
 export function SettingLLMPrice() {
     const t = useTranslations('setting');
-    const { data: settings } = useSettingList();
-    const setSetting = useSetSetting();
     const updatePrice = useUpdateModelPrice();
     const rebuildPrice = useRebuildModelPrice();
     const { data: lastUpdateTime } = useLastUpdateTime();
 
-    const [updateInterval, setUpdateInterval] = useState('');
     const [confirmRebuild, setConfirmRebuild] = useState(false);
     const [rebuildCountdown, setRebuildCountdown] = useState(0);
-    const initialUpdateInterval = useRef('');
-
-    useEffect(() => {
-        if (settings) {
-            const interval = settings.find(s => s.key === SettingKey.ModelInfoUpdateInterval);
-            if (interval) {
-                queueMicrotask(() => setUpdateInterval(interval.value));
-                initialUpdateInterval.current = interval.value;
-            }
-        }
-    }, [settings]);
 
     useEffect(() => {
         if (!confirmRebuild || rebuildCountdown <= 0) return;
         const timer = window.setTimeout(() => setRebuildCountdown((seconds) => seconds - 1), 1000);
         return () => window.clearTimeout(timer);
     }, [confirmRebuild, rebuildCountdown]);
-
-    const handleSave = (key: string, value: string, initialValue: string) => {
-        if (value === initialValue) return;
-
-        setSetting.mutate({ key, value }, {
-            onSuccess: () => {
-                toast.success(t('saved'));
-                initialUpdateInterval.current = value;
-            }
-        });
-    };
 
     const handleManualUpdate = () => {
         updatePrice.mutate(undefined, {
@@ -95,13 +70,14 @@ export function SettingLLMPrice() {
                     <Clock className="h-5 w-5 text-muted-foreground" />
                     <span className="text-sm font-medium">{t('llmPrice.updateInterval.label')}</span>
                 </div>
-                <Input
+                <SettingInput
+                    settingKey={SettingKey.ModelInfoUpdateInterval}
+                    aria-label={t('llmPrice.updateInterval.label')}
                     type="number"
-                    value={updateInterval}
-                    onChange={(e) => setUpdateInterval(e.target.value)}
-                    onBlur={() => handleSave(SettingKey.ModelInfoUpdateInterval, updateInterval, initialUpdateInterval.current)}
+                    min={0}
+                    step={1}
                     placeholder={t('llmPrice.updateInterval.placeholder')}
-                    className="w-48 rounded-xl"
+                    className="w-40 max-w-[45%] shrink-0 rounded-xl"
                 />
             </div>
 

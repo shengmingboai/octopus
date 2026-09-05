@@ -5,28 +5,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/shengmingboai/octopus/internal/conf"
-	"github.com/shengmingboai/octopus/internal/server/middleware"
 	"github.com/shengmingboai/octopus/internal/server/resp"
-	"github.com/shengmingboai/octopus/internal/server/router"
 	"github.com/shengmingboai/octopus/internal/update"
 )
-
-func init() {
-	router.NewGroupRouter("/api/v1/update").
-		Use(middleware.Auth()).
-		AddRoute(
-			router.NewRoute("", http.MethodGet).
-				Handle(latest),
-		).
-		AddRoute(
-			router.NewRoute("/now-version", http.MethodGet).
-				Handle(getNowVersion),
-		).
-		AddRoute(
-			router.NewRoute("", http.MethodPost).
-				Handle(updateFunc),
-		)
-}
 
 func latest(c *gin.Context) {
 	latestInfo, err := update.GetLatestInfo()

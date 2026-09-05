@@ -1,6 +1,7 @@
 package task
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -8,13 +9,10 @@ import (
 )
 
 type taskEntry struct {
-	name       string
 	interval   time.Duration
-	fn         func()
+	fn         func(context.Context)
 	runOnStart bool
-	ticker     *time.Ticker
-	stopCh     chan struct{}
-	updateCh   chan time.Duration
+	updateCh   chan struct{}
 }
 
 var (
@@ -22,92 +20,78 @@ var (
 	tasksMu sync.RWMutex
 )
 
-// Register 注册一个定时任务
-// runOnStart: 是否在启动时立即执行一次
-func Register(name string, interval time.Duration, runOnStart bool, fn func()) {
-	if interval <= 0 {
-		log.Debugf("task %s not registered: interval is 0", name)
-		return
-	}
-
+// Register 保留禁用任务的定义，使间隔从 0 改回正数时可以恢复调度。
+func Register(name string, interval time.Duration, runOnStart bool, fn func(context.Context)) {
 	tasksMu.Lock()
 	defer tasksMu.Unlock()
-
 	if _, exists := tasks[name]; exists {
-		log.Warnf("task %s already registered, skipping", name)
 		return
 	}
-
 	tasks[name] = &taskEntry{
-		name:       name,
 		interval:   interval,
 		fn:         fn,
 		runOnStart: runOnStart,
-		stopCh:     make(chan struct{}),
-		updateCh:   make(chan time.Duration),
+		updateCh:   make(chan struct{}, 1),
 	}
-	log.Debugf("task %s registered with interval %v, runOnStart: %v", name, interval, runOnStart)
 }
 
-// Update 更新任务的执行间隔
-// 当 interval 为 0 时，删除任务
 func Update(name string, interval time.Duration) {
 	tasksMu.Lock()
+	defer tasksMu.Unlock()
 	entry, exists := tasks[name]
 	if !exists {
-		tasksMu.Unlock()
 		log.Warnf("task %s not found", name)
 		return
 	}
-
-	if interval <= 0 {
-		delete(tasks, name)
-		tasksMu.Unlock()
-		close(entry.stopCh)
-		log.Infof("task %s removed: interval is 0", name)
-		return
-	}
-	tasksMu.Unlock()
-
+	entry.interval = interval
+	// 通知可以合并，但最新间隔始终保存在锁保护的状态里。
 	select {
-	case entry.updateCh <- interval:
-		log.Infof("task %s interval updated to %v", name, interval)
+	case entry.updateCh <- struct{}{}:
 	default:
-		log.Warnf("task %s update channel full, skipping", name)
 	}
 }
 
-// RUN 启动所有注册的任务
-func RUN() {
+// Run 随上下文停止调度，并等待正在执行的任务退出。
+func Run(ctx context.Context) {
+	var workers sync.WaitGroup
 	tasksMu.RLock()
 	for _, entry := range tasks {
-		go runTask(entry)
+		workers.Go(func() { runTask(ctx, entry) })
 	}
 	tasksMu.RUnlock()
-
-	// 阻塞主协程
-	select {}
+	workers.Wait()
 }
 
-func runTask(entry *taskEntry) {
-	// 根据配置决定是否在启动时立即执行
-	if entry.runOnStart {
-		go entry.fn()
+func runTask(ctx context.Context, entry *taskEntry) {
+	timer := time.NewTimer(time.Hour)
+	defer timer.Stop()
+	var ticks <-chan time.Time
+	reset := func() {
+		timer.Stop()
+		ticks = nil
+		tasksMu.RLock()
+		interval := entry.interval
+		tasksMu.RUnlock()
+		if interval > 0 {
+			timer.Reset(interval)
+			ticks = timer.C
+		}
 	}
-
-	entry.ticker = time.NewTicker(entry.interval)
-	defer entry.ticker.Stop()
-
-	for {
+	reset()
+	if ticks != nil && entry.runOnStart && ctx.Err() == nil {
+		entry.fn(ctx)
+		reset()
+	}
+	for ctx.Err() == nil {
 		select {
-		case <-entry.ticker.C:
-			go entry.fn()
-		case newInterval := <-entry.updateCh:
-			entry.ticker.Stop()
-			entry.interval = newInterval
-			entry.ticker = time.NewTicker(newInterval)
-		case <-entry.stopCh:
+		case <-ctx.Done():
 			return
+		case <-entry.updateCh:
+			reset()
+		case <-ticks:
+			// 同一任务不重叠执行，避免慢同步和统计落库累积并发调用。
+			entry.fn(ctx)
+			reset()
 		}
 	}
 }

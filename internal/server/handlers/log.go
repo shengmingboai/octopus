@@ -9,35 +9,8 @@ import (
 	"github.com/gin-contrib/sse"
 	"github.com/gin-gonic/gin"
 	"github.com/shengmingboai/octopus/internal/relay"
-	"github.com/shengmingboai/octopus/internal/server/middleware"
 	"github.com/shengmingboai/octopus/internal/server/resp"
-	"github.com/shengmingboai/octopus/internal/server/router"
 )
-
-func init() {
-	router.NewGroupRouter("/api/v1/log").
-		Use(middleware.Auth()).
-		AddRoute(
-			router.NewRoute("/overview/stream", http.MethodGet).
-				Handle(streamOverview),
-		).
-		AddRoute(
-			router.NewRoute("/:id/request-body", http.MethodGet).
-				Handle(getRequestBody),
-		).
-		AddRoute(
-			router.NewRoute("/:id/response-body", http.MethodGet).
-				Handle(getResponseBody),
-		).
-		AddRoute(
-			router.NewRoute("/:request_id/:round/stop", http.MethodPost).
-				Handle(interruptRound),
-		).
-		AddRoute(
-			router.NewRoute("/clear", http.MethodDelete).
-				Handle(clearLog),
-		)
-}
 
 // interruptRound 中止请求当前轮次匹配的上游调用。
 func interruptRound(c *gin.Context) {

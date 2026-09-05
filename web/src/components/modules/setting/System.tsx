@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslations } from 'use-intl';
 import { Monitor, Globe, Clock, Shield, HelpCircle, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useSettingList, useSetSetting, SettingKey } from '@/api/setting';
 import { toast } from 'sonner';
+import { SettingInput } from './SettingInput';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 export function SettingSystem() {
@@ -12,51 +13,8 @@ export function SettingSystem() {
     const { data: settings } = useSettingList();
     const setSetting = useSetSetting();
 
-    const [proxyUrl, setProxyUrl] = useState('');
-    const [statsSaveInterval, setStatsSaveInterval] = useState('');
-    const [corsAllowOrigins, setCorsAllowOrigins] = useState('');
+    const corsAllowOrigins = settings?.find((setting) => setting.key === SettingKey.CORSAllowOrigins)?.value ?? '';
     const [corsInputValue, setCorsInputValue] = useState('');
-
-    const initialProxyUrl = useRef('');
-    const initialStatsSaveInterval = useRef('');
-    const initialCorsAllowOrigins = useRef('');
-
-    useEffect(() => {
-        if (settings) {
-            const proxy = settings.find(s => s.key === SettingKey.ProxyURL);
-            const interval = settings.find(s => s.key === SettingKey.StatsSaveInterval);
-            const cors = settings.find(s => s.key === SettingKey.CORSAllowOrigins);
-            if (proxy) {
-                queueMicrotask(() => setProxyUrl(proxy.value));
-                initialProxyUrl.current = proxy.value;
-            }
-            if (interval) {
-                queueMicrotask(() => setStatsSaveInterval(interval.value));
-                initialStatsSaveInterval.current = interval.value;
-            }
-            if (cors) {
-                queueMicrotask(() => setCorsAllowOrigins(cors.value));
-                initialCorsAllowOrigins.current = cors.value;
-            }
-        }
-    }, [settings]);
-
-    const handleSave = (key: string, value: string, initialValue: string) => {
-        if (value === initialValue) return;
-
-        setSetting.mutate({ key, value }, {
-            onSuccess: () => {
-                toast.success(t('saved'));
-                if (key === SettingKey.ProxyURL) {
-                    initialProxyUrl.current = value;
-                } else if (key === SettingKey.StatsSaveInterval) {
-                    initialStatsSaveInterval.current = value;
-                } else if (key === SettingKey.CORSAllowOrigins) {
-                    initialCorsAllowOrigins.current = value;
-                }
-            }
-        });
-    };
 
     const corsAllowOriginsList = useMemo(() => {
         const value = corsAllowOrigins.trim();
@@ -82,8 +40,14 @@ export function SettingSystem() {
                 .filter(Boolean)
         ));
         const normalizedValue = normalizedOrigins.includes('*') ? '*' : normalizedOrigins.join(',');
-        setCorsAllowOrigins(normalizedValue);
-        handleSave(SettingKey.CORSAllowOrigins, normalizedValue, initialCorsAllowOrigins.current);
+        if (normalizedValue === corsAllowOrigins || setSetting.isPending) return;
+        setSetting.mutate({ key: SettingKey.CORSAllowOrigins, value: normalizedValue }, {
+            onSuccess: () => {
+                setCorsInputValue('');
+                toast.success(t('saved'));
+            },
+            onError: (error) => toast.error(error.message),
+        });
     };
 
     const handleAddCorsOrigin = () => {
@@ -97,14 +61,12 @@ export function SettingSystem() {
 
         if (newOrigins.includes('*')) {
             saveCorsAllowOrigins(['*']);
-            setCorsInputValue('');
             return;
         }
 
         const base = corsAllowOriginsList.includes('*') ? [] : corsAllowOriginsList;
         const merged = Array.from(new Set([...base, ...newOrigins]));
         saveCorsAllowOrigins(merged);
-        setCorsInputValue('');
     };
 
     const handleRemoveCorsOrigin = (originToRemove: string) => {
@@ -125,12 +87,11 @@ export function SettingSystem() {
                     <Globe className="h-5 w-5 text-muted-foreground" />
                     <span className="text-sm font-medium">{t('proxyUrl.label')}</span>
                 </div>
-                <Input
-                    value={proxyUrl}
-                    onChange={(e) => setProxyUrl(e.target.value)}
-                    onBlur={() => handleSave('proxy_url', proxyUrl, initialProxyUrl.current)}
+                <SettingInput
+                    settingKey={SettingKey.ProxyURL}
+                    aria-label={t('proxyUrl.label')}
                     placeholder={t('proxyUrl.placeholder')}
-                    className="w-48 rounded-xl"
+                    className="w-40 max-w-[45%] shrink-0 rounded-xl"
                 />
             </div>
 
@@ -140,13 +101,14 @@ export function SettingSystem() {
                     <Clock className="h-5 w-5 text-muted-foreground" />
                     <span className="text-sm font-medium">{t('statsSaveInterval.label')}</span>
                 </div>
-                <Input
+                <SettingInput
+                    settingKey={SettingKey.StatsSaveInterval}
+                    aria-label={t('statsSaveInterval.label')}
                     type="number"
-                    value={statsSaveInterval}
-                    onChange={(e) => setStatsSaveInterval(e.target.value)}
-                    onBlur={() => handleSave('stats_save_interval', statsSaveInterval, initialStatsSaveInterval.current)}
+                    min={0}
+                    step={1}
                     placeholder={t('statsSaveInterval.placeholder')}
-                    className="w-48 rounded-xl"
+                    className="w-40 max-w-[45%] shrink-0 rounded-xl"
                 />
             </div>
 
@@ -179,6 +141,7 @@ export function SettingSystem() {
                     </PopoverTrigger>
                     <PopoverContent className="w-72 space-y-2 rounded-3xl p-3 bg-card">
                         <Input
+                            disabled={setSetting.isPending || !settings}
                             value={corsInputValue}
                             onChange={(e) => setCorsInputValue(e.target.value)}
                             onKeyDown={(e) => {
@@ -198,6 +161,7 @@ export function SettingSystem() {
                                         <span className="break-all text-xs leading-5">{origin}</span>
                                         <button
                                             type="button"
+                                            disabled={setSetting.isPending}
                                             onClick={() => handleRemoveCorsOrigin(origin)}
                                             className="text-muted-foreground transition-colors hover:text-destructive"
                                             aria-label={`remove ${origin}`}
