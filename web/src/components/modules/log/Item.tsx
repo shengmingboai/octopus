@@ -10,6 +10,7 @@ import { useGroup, useUpdateGroup } from '@/api/group';
 import { Protocol } from '@/api/channel';
 import { getModelIcon } from '@/lib/model-icons';
 import { Badge } from '@/components/ui/badge';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { CopyIconButton } from '@/components/common/CopyButton';
@@ -147,7 +148,37 @@ function LogDetail({ log, now }: { log: RelayLogOverview; now: number }) {
     const rounds = useMemo(() => log.rounds ?? [], [log.rounds]);
     // 进行中与最终失败始终展示重试详情; 成功请求存在多轮时也回放, 单轮成功没有可回放的内容。
     const showRounds = log.status === 'running' || (requestFailed && rounds.length > 0) || rounds.length > 1;
+    // 成功或已提交的请求在历轮之下还展示最终响应; 进行中与失败请求只有历轮可看。
+    const showResponse = showRounds && (log.status === 'success' || responseCommitted);
     const isWaitingForSelection = log.status === 'running' && !log.sending && activeGroup?.mode === 'manual' && activeGroup.runtime.current_item_id === 0; // isWaitingForSelection 表示手动模式请求正等待选择渠道。
+    // roundsList 是历轮列表本体; 回放时包进默认折叠的手风琴, 进行中与失败时平铺以便直接看到错误。
+    const roundsList = (
+        <div className="divide-y divide-border">
+            {rounds.map((round) => (
+                <div key={round.round} className="flex flex-col gap-1.5 px-3 py-2.5 text-xs">
+                    <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground">{t('retryIndex', { index: round.round })}</span>
+                        <span className="font-semibold text-foreground">{round.channel || '-'}</span>
+                        {round.sending ? (
+                            <Loader2 className="ml-auto size-3.5 animate-spin text-muted-foreground" />
+                        ) : round.error ? (
+                            <CopyIconButton
+                                text={round.error}
+                                className="ml-auto p-1 rounded-md text-destructive/60 hover:text-destructive hover:bg-destructive/10 transition-colors"
+                                copyIconClassName="size-3.5"
+                                checkIconClassName="size-3.5"
+                            />
+                        ) : null}
+                    </div>
+                    {round.error && (
+                        <div className="text-[11px] leading-relaxed text-destructive/90 whitespace-pre-wrap wrap-break-word">
+                            {round.error}
+                        </div>
+                    )}
+                </div>
+            ))}
+        </div>
+    );
 
     // 让弹窗先完成展开动画, 避免详情请求及其状态更新占用动画起步帧。
     useEffect(() => {
@@ -313,30 +344,47 @@ function LogDetail({ log, now }: { log: RelayLogOverview; now: number }) {
                                 </div>
                             ) : showRounds ? (
                                 rounds.length ? (
-                                    <div className="divide-y divide-border">
-                                        {rounds.map((round) => (
-                                            <div key={round.round} className="flex flex-col gap-1.5 px-3 py-2.5 text-xs">
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-muted-foreground">{t('retryIndex', { index: round.round })}</span>
-                                                    <span className="font-semibold text-foreground">{round.channel || '-'}</span>
-                                                    {round.sending ? (
-                                                        <Loader2 className="ml-auto size-3.5 animate-spin text-muted-foreground" />
-                                                    ) : round.error ? (
-                                                        <CopyIconButton
-                                                            text={round.error}
-                                                            className="ml-auto p-1 rounded-md text-destructive/60 hover:text-destructive hover:bg-destructive/10 transition-colors"
-                                                            copyIconClassName="size-3.5"
-                                                            checkIconClassName="size-3.5"
-                                                        />
-                                                    ) : null}
+                                    <div>
+                                        {showResponse ? (
+                                            <Accordion type="single" collapsible>
+                                                <AccordionItem value="rounds">
+                                                    <AccordionTrigger className="px-3 py-2 no-underline hover:no-underline">
+                                                        {t('retryDetails')}
+                                                    </AccordionTrigger>
+                                                    <AccordionContent className="p-0">
+                                                        {roundsList}
+                                                    </AccordionContent>
+                                                </AccordionItem>
+                                            </Accordion>
+                                        ) : (
+                                            roundsList
+                                        )}
+                                        {showResponse && (
+                                            <div className="border-t border-border">
+                                                <div className="px-3 py-2 text-sm font-medium text-card-foreground">
+                                                    {t('responseContent')}
                                                 </div>
-                                                {round.error && (
-                                                    <div className="text-[11px] leading-relaxed text-destructive/90 whitespace-pre-wrap wrap-break-word">
-                                                        {round.error}
+                                                {log.status === 'success' ? (
+                                                    responseBody.isLoading ? (
+                                                        <div className="flex h-24 items-center justify-center">
+                                                            <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                                                        </div>
+                                                    ) : responseBody.error ? (
+                                                        <div className="flex h-24 flex-col items-center justify-center gap-2 px-4 text-xs text-destructive">
+                                                            <AlertCircle className="size-5" />
+                                                            <span>{t('detailUnavailable')}</span>
+                                                        </div>
+                                                    ) : (
+                                                        <JsonContent content={responseBody.data} fallbackText={t('noResponseContent')} />
+                                                    )
+                                                ) : (
+                                                    <div className="flex h-24 items-center justify-center gap-2 text-xs text-muted-foreground">
+                                                        <Loader2 className="size-4 animate-spin" />
+                                                        {t('responseStreaming')}
                                                     </div>
                                                 )}
                                             </div>
-                                        ))}
+                                        )}
                                     </div>
                                 ) : (
                                     <div className="flex h-full items-center justify-center gap-2 text-xs text-muted-foreground">
