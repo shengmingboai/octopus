@@ -1,25 +1,33 @@
 import { Fragment } from 'react';
 import { useTranslations } from 'use-intl';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { MetricKey } from './store';
 
+const METRIC_KEYS = ['cost', 'count', 'tokens'] as const;
+
 // MetricTabs 渲染以 / 分隔的统计维度切换, 供趋势图和排行榜共用。
+// 选中高亮与渠道详情的排序一致: 选中项加重, 未选中项弱化并在悬停时加深。
 export function MetricTabs({ value, onChange }: { value: MetricKey; onChange: (value: MetricKey) => void }) {
     const t = useTranslations('home.metric');
 
     return (
-        <Tabs value={value} onValueChange={(next) => onChange(next as MetricKey)}>
-            <TabsList variant="text" className="p-0">
-                {/* 首尾只留内侧内边距, 使 / 分隔号与文字贴合。 */}
-                {([['cost', 'pr-0'], ['count', 'px-0'], ['tokens', 'pl-0']] as const).map(([key, padding], index) => (
-                    <Fragment key={key}>
-                        {index > 0 && (
-                            <span aria-hidden="true" className="mx-1 inline-flex h-full -translate-y-px items-center text-sm font-medium leading-none text-muted-foreground/50">/</span>
-                        )}
-                        <TabsTrigger value={key} className={padding}>{t(key)}</TabsTrigger>
-                    </Fragment>
-                ))}
-            </TabsList>
-        </Tabs>
+        <div className="flex shrink-0 items-center text-sm">
+            {METRIC_KEYS.map((key, index) => (
+                <Fragment key={key}>
+                    {index > 0 && (
+                        <span aria-hidden="true" className="mx-1 text-muted-foreground/40">/</span>
+                    )}
+                    <button
+                        type="button"
+                        onClick={() => onChange(key)}
+                        aria-pressed={value === key}
+                        className={`transition-colors ${value === key
+                            ? 'font-medium text-foreground'
+                            : 'text-muted-foreground/50 hover:text-muted-foreground'}`}
+                    >
+                        {t(key)}
+                    </button>
+                </Fragment>
+            ))}
+        </div>
     );
 }
