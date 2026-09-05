@@ -77,6 +77,7 @@ export type ChannelDetail = {
     match_regex: string;
     auto_sync_models: boolean; // 是否按同步周期自动与上游同步模型列表。
     auto_group: boolean; // 同步新引入的模型是否自动加入同名分组。
+    no_cooldown: boolean; // 失败后不进入冷却：仅免去跨请求冷却，单个请求内仍按尝试次数换成员。
 };
 
 // ChannelModelStats 是单个渠道模型的累计统计，自带名称。

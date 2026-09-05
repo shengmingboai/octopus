@@ -192,7 +192,7 @@ function ChannelFormFields({ channel, onBack }: { channel?: ChannelDetail; onBac
                                 </div>
                             ))}
                             <div className="flex flex-wrap items-center gap-6">
-                                {([['enabled', t('enabled')], ['proxy', t('proxy')], ['auto_sync_models', t('autoSyncModels')], ['auto_group', t('autoGroup')]] as const).map(([field, label]) => (
+                                {([['enabled', t('enabled')], ['proxy', t('proxy')], ['auto_sync_models', t('autoSyncModels')], ['auto_group', t('autoGroup')], ['no_cooldown', t('noCooldown')]] as const).map(([field, label]) => (
                                     <label key={field} className="flex items-center gap-2 cursor-pointer">
                                         <Switch
                                             checked={state[field]}

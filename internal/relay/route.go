@@ -64,8 +64,9 @@ func ResetRouteState(groupID int) {
 }
 
 // pickGroupItem 按分组模式选择本轮目标成员, 没有可用成员时返回零值; group.Items 已按 Priority 升序排列。
+// skip 为本请求内已耗尽尝试的成员集合: 不冷却成员不写入跨请求冷却表, 只能由此在本请求内跳过。
 // 渠道是否可用不在此判断: 渠道禁用或缺少密钥由调用方发现并作为一轮失败上报, 该成员随即进入冷却而在后续轮次被跳过。
-func pickGroupItem(group model.Group) model.GroupItem {
+func pickGroupItem(group model.Group, skip map[int]bool) model.GroupItem {
 	if group.Mode == model.GroupModeManual {
 		for _, item := range group.Items {
 			if item.ID == group.ActiveItemID {
@@ -93,6 +94,9 @@ func pickGroupItem(group model.Group) model.GroupItem {
 		// 遍历到当前成员说明比它优先级更高的成员都不可选, 沿用当前成员。
 		if item.ID == route.CurrentItemID {
 			break
+		}
+		if skip[item.ID] {
+			continue
 		}
 		deadline, cooling := route.Cooldowns[item.ID]
 		if cooling && deadline > now {
@@ -156,9 +160,10 @@ func recordRouteSuccess(group model.Group, itemID int) {
 	}
 }
 
-// recordRouteFailure 上报一轮失败: 达到配置的总尝试次数后将该成员打入冷却并让出当前路由, 返回是否已冷却。
+// recordRouteFailure 上报一轮失败: 达到配置的总尝试次数后将该成员打入冷却并让出当前路由, 返回是否应换成员。
 // failures 为该成员在本请求内包含首次请求的连续失败次数, 由调用方累计。
-func recordRouteFailure(group model.Group, itemID, failures int) bool {
+// noCooldown 渠道不写入跨请求冷却表: 只让出当前路由, 由调用方在本请求内跳过该成员, 后续请求继续选它。
+func recordRouteFailure(group model.Group, itemID, failures int, noCooldown bool) bool {
 	if group.Mode == model.GroupModeManual {
 		return false
 	}
@@ -176,6 +181,18 @@ func recordRouteFailure(group model.Group, itemID, failures int) bool {
 	}
 
 	now := time.Now().UnixMilli()
+	if noCooldown {
+		if route.ProbeItemID == itemID {
+			route.ProbeItemID = 0
+		}
+		if route.CurrentItemID == itemID {
+			route.CurrentItemID = 0
+			route.AffinityUntil = 0
+			route.affinityArmed = true
+		}
+		publishRouteLocked(route)
+		return true
+	}
 	route.Cooldowns[itemID] = now + int64(group.RelayConfig.MemberCooldownSeconds)*1000
 	if route.ProbeItemID == itemID {
 		route.ProbeItemID = 0

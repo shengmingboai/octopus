@@ -78,6 +78,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 		ctx := c.Request.Context()
 		failedItemID := 0 // 当前累计连续失败次数的成员 ID。
 		failures := 0     // 该成员包含首次请求的连续失败次数。
+		skipped := make(map[int]bool) // 本请求内已耗尽尝试的成员: 不冷却成员不进跨请求冷却表, 只能由此跳过。
 
 		for {
 			if ctx.Err() != nil {
@@ -95,12 +96,14 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			}
 
 			// 手动模式取人工指定的成员, 故障转移模式按优先级选择未禁用且不在冷却中的成员。
-			// 没有目标时等待重新选择, 期间人工切换渠道, 补齐成员或成员冷却到期即可让请求继续。
-			item := pickGroupItem(group)
+			// 没有目标时等待重新选择, 期间人工切换渠道, 补齐成员或成员冷却到期即可让请求继续;
+			// 全部成员耗尽时等待后重新放行, 避免不冷却成员导致请求死等。
+			item := pickGroupItem(group, skipped)
 			if item.ID == 0 {
 				if !request.wait(ctx, group.RelayConfig.MemberRetryIntervalSeconds) {
 					return
 				}
+				clear(skipped)
 				continue
 			}
 
@@ -221,7 +224,8 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 					failures = 1
 				}
 				// 达到总尝试次数时成员进入冷却并立即重新选路, 否则等待后重试。
-				if recordRouteFailure(group, item.ID, failures) {
+				if recordRouteFailure(group, item.ID, failures, channel.NoCooldown) {
+					skipped[item.ID] = true
 					continue
 				}
 				if !request.wait(ctx, group.RelayConfig.MemberRetryIntervalSeconds) {

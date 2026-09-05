@@ -21,6 +21,7 @@ export type ChannelFormState = {
     match_regex: string;
     auto_sync_models: boolean;
     auto_group: boolean;
+    no_cooldown: boolean;
 };
 
 // grantKey 生成授权在状态里的键; 分隔符取 \0, 模型名与凭据名都不会含它。
@@ -47,6 +48,7 @@ export const emptyFormState: ChannelFormState = {
     match_regex: '',
     auto_sync_models: false,
     auto_group: false,
+    no_cooldown: false,
 };
 
 // fromChannel 把渠道完整配置还原为表单状态; 授权读写都按名称, 直接建索引即可。
@@ -70,6 +72,7 @@ export function fromChannel(channel: ChannelDetail): ChannelFormState {
         match_regex: channel.match_regex,
         auto_sync_models: channel.auto_sync_models,
         auto_group: channel.auto_group,
+        no_cooldown: channel.no_cooldown,
     };
 }
 
@@ -101,6 +104,7 @@ export function toChannelConfig(state: ChannelFormState) {
         match_regex: state.match_regex.trim(),
         auto_sync_models: state.auto_sync_models,
         auto_group: state.auto_group,
+        no_cooldown: state.no_cooldown,
     };
 }
 

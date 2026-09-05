@@ -470,6 +470,7 @@
             "proxy": "Use proxy",
             "autoSyncModels": "Auto-sync",
             "autoGroup": "Auto grouping",
+            "noCooldown": "No cooldown",
             "keys": "Credentials",
             "keyAdd": "Add credential",
             "keyName": "Name",

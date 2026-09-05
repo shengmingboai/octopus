@@ -470,6 +470,7 @@
             "proxy": "使用代理",
             "autoSyncModels": "自動同步",
             "autoGroup": "自動分組",
+            "noCooldown": "失敗不冷卻",
             "keys": "憑證",
             "keyAdd": "新增憑證",
             "keyName": "名稱",
