@@ -143,9 +143,10 @@ function LogDetail({ log, now }: { log: RelayLogOverview; now: number }) {
     const errorText = log.error ?? '';
     const requestFailed = log.status === 'failed' || log.status === 'canceled';
     const responseCommitted = log.status === 'committed';
-    // 历轮调用记录由后端随状态流推送完整历史, 最新一轮排在最前。
-    const rounds = useMemo(() => (log.rounds ?? []).slice().reverse(), [log.rounds]);
-    const showRounds = log.status === 'running' || (requestFailed && rounds.length > 0);
+    // 历轮调用记录由后端随状态流推送完整历史, 按轮次正序回放。
+    const rounds = useMemo(() => log.rounds ?? [], [log.rounds]);
+    // 进行中与最终失败始终展示重试详情; 成功请求存在多轮时也回放, 单轮成功没有可回放的内容。
+    const showRounds = log.status === 'running' || (requestFailed && rounds.length > 0) || rounds.length > 1;
     const isWaitingForSelection = log.status === 'running' && !log.sending && activeGroup?.mode === 'manual' && activeGroup.runtime.current_item_id === 0; // isWaitingForSelection 表示手动模式请求正等待选择渠道。
 
     // 让弹窗先完成展开动画, 避免详情请求及其状态更新占用动画起步帧。
