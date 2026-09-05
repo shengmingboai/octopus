@@ -175,6 +175,29 @@
             "example": "只允許指定域名: https://example.com,https://example2.com"
         },
         "saved": "已儲存",
+        "failover": {
+            "title": "故障轉移策略",
+            "maxAttempts": {
+                "label": "總嘗試次數",
+                "hint": "單個成員包含首次請求的總嘗試次數"
+            },
+            "retryInterval": {
+                "label": "重試間隔（秒）",
+                "hint": "同一成員相鄰兩次嘗試的等待時間"
+            },
+            "cooldownBase": {
+                "label": "基準冷卻（秒）",
+                "hint": "成員重試耗盡後的初始冷卻時間, 連續熔斷逐次翻倍"
+            },
+            "cooldownMax": {
+                "label": "最大冷卻（秒）",
+                "hint": "指數退避的冷卻上限"
+            },
+            "affinity": {
+                "label": "親和時間（秒）",
+                "hint": "備用成員首次請求成功後繼續使用該成員的時間, 0 表示不保持"
+            }
+        },
         "backup": {
             "title": "備份 / 復原",
             "export": {
@@ -344,19 +367,6 @@
             "manual": "手動",
             "failover": "故障轉移",
             "members": "成員",
-            "relay": "路由策略",
-            "retryCount": "總嘗試次數",
-            "retryCountHint": "單個成員包含首次請求的總嘗試次數",
-            "retryInterval": "重試間隔（秒）",
-            "retryIntervalHint": "同一成員相鄰兩次嘗試的等待時間",
-            "nonStreamTimeout": "非串流逾時（秒）",
-            "nonStreamTimeoutHint": "等待完整非串流回應的最長時間",
-            "streamTimeout": "串流首事件逾時（秒）",
-            "streamTimeoutHint": "等待首個有效串流事件的最長時間",
-            "cooldown": "冷卻時間（秒）",
-            "cooldownHint": "成員重試耗盡後暫停使用的時間",
-            "affinity": "故障切換親和時間（秒）",
-            "affinityHint": "備用成員首次請求成功後繼續使用該成員的時間",
             "items": "成員順序",
             "addItem": "新增模型",
             "autoAdd": "自動新增",

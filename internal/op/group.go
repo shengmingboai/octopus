@@ -76,15 +76,13 @@ func GroupCreate(req *model.GroupCreateRequest, ctx context.Context) (*model.Gro
 		return nil, fmt.Errorf("group name is required")
 	}
 	group := model.Group{
-		Name:        name,
-		Mode:        req.Mode,
-		RelayConfig: req.RelayConfig,
-		Items:       make([]model.GroupItem, len(req.Items)),
+		Name:  name,
+		Mode:  req.Mode,
+		Items: make([]model.GroupItem, len(req.Items)),
 	}
 	if group.Mode == "" {
 		group.Mode = model.GroupModeManual
 	}
-	model.NormalizeGroupRelayConfig(&group.RelayConfig)
 	for i, item := range req.Items {
 		group.Items[i] = model.GroupItem{ChannelGrantID: item.ChannelGrantID, Priority: i + 1}
 	}
@@ -118,12 +116,6 @@ func GroupUpdate(id int, req *model.GroupUpdateRequest, ctx context.Context) (*m
 	if req.Mode != nil {
 		selectFields = append(selectFields, "mode")
 		updates.Mode = *req.Mode
-	}
-	if req.RelayConfig != nil {
-		config := *req.RelayConfig
-		model.NormalizeGroupRelayConfig(&config)
-		selectFields = append(selectFields, "relay_config")
-		updates.RelayConfig = config
 	}
 
 	var group model.Group

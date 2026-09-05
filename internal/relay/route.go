@@ -20,7 +20,8 @@ type RouteState struct {
 	AffinityUntil int64         `json:"affinity_until"`  // 当前路由的亲和截止 Unix 毫秒时间, 0 表示无亲和; 手动模式恒为 0。
 	Cooldowns     map[int]int64 `json:"cooldowns"`       // 失败成员 ID 对应的冷却截止 Unix 毫秒时间, 已到期的条目由前端按当前时间忽略。
 
-	affinityArmed bool // 当前路由下一次成功后是否开始亲和, 仅故障切换后为真。
+	affinityArmed bool          // 当前路由下一次成功后是否开始亲和, 仅故障切换后为真。
+	trips         map[int]int   // 成员累计进入冷却的次数, 冷却时长按它指数退避, 成功后重置; 不随状态流出 JSON。
 }
 
 const routeStreamBuffer = 16 // 单个路由流连接的非阻塞消息缓冲容量。
@@ -139,10 +140,11 @@ func recordRouteSuccess(group model.Group, itemID int) {
 	now := time.Now().UnixMilli()
 	changed := false
 
-	// 探测成功说明该成员已恢复, 解除冷却; 若当前路由不在亲和期内则立即切回该成员。
+	// 探测成功说明该成员已恢复, 解除冷却并重置退避计数; 若当前路由不在亲和期内则立即切回该成员。
 	if route.ProbeItemID == itemID {
 		route.ProbeItemID = 0
 		delete(route.Cooldowns, itemID)
+		delete(route.trips, itemID)
 		if route.CurrentItemID == 0 || route.AffinityUntil <= now {
 			route.CurrentItemID = itemID
 			route.AffinityUntil = 0
@@ -152,8 +154,8 @@ func recordRouteSuccess(group model.Group, itemID int) {
 	// 亲和只在故障切换后的首次成功时开始, 使请求在一段时间内稳定留在备用成员上。
 	if route.CurrentItemID == itemID && route.affinityArmed {
 		route.affinityArmed = false
-		if group.RelayConfig.MemberAffinitySeconds > 0 {
-			route.AffinityUntil = now + int64(group.RelayConfig.MemberAffinitySeconds)*1000
+		if seconds := failoverAffinitySeconds(); seconds > 0 {
+			route.AffinityUntil = now + int64(seconds)*1000
 			changed = true
 		}
 	}
@@ -177,8 +179,8 @@ func recordRouteFailure(group model.Group, itemID, failures int, noCooldown bool
 	if route == nil {
 		return false
 	}
-	// 探测请求只有一次机会, 常规成员达到配置的总尝试次数后进入冷却。
-	if route.ProbeItemID != itemID && failures < group.RelayConfig.MemberMaxAttempts {
+	// 探测请求只有一次机会, 常规成员达到全局策略的总尝试次数后进入冷却。
+	if route.ProbeItemID != itemID && failures < failoverMaxAttempts() {
 		return false
 	}
 
@@ -195,7 +197,9 @@ func recordRouteFailure(group model.Group, itemID, failures int, noCooldown bool
 		publishRouteLocked(route)
 		return true
 	}
-	route.Cooldowns[itemID] = now + int64(group.RelayConfig.MemberCooldownSeconds)*1000
+	// 冷却按连续熔断次数指数退避: 每次耗尽尝试翻倍, 封顶全局上限, 成功一次即重置回基准。
+	route.trips[itemID]++
+	route.Cooldowns[itemID] = now + int64(failoverCooldownSeconds(route.trips[itemID]))*1000
 	if route.ProbeItemID == itemID {
 		route.ProbeItemID = 0
 	}
@@ -224,7 +228,7 @@ func releaseRouteProbe(group model.Group, itemID int) {
 func groupRouteLocked(group model.Group) *RouteState {
 	route := routes[group.ID]
 	if route == nil {
-		route = &RouteState{GroupID: group.ID, Cooldowns: make(map[int]int64)}
+		route = &RouteState{GroupID: group.ID, Cooldowns: make(map[int]int64), trips: make(map[int]int)}
 		routes[group.ID] = route
 	}
 	// items 的值为该成员是否可用: 冷却只清已删除的成员, 不可用成员的冷却保留, 重新启用后继续生效。
@@ -236,6 +240,7 @@ func groupRouteLocked(group model.Group) *RouteState {
 	for itemID := range route.Cooldowns {
 		if _, exists := items[itemID]; !exists {
 			delete(route.Cooldowns, itemID)
+			delete(route.trips, itemID)
 			changed = true
 		}
 	}

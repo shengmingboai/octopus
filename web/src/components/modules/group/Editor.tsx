@@ -8,11 +8,10 @@ import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Accordion, AccordionContent, AccordionItem } from '@/components/ui/accordion';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { getModelIcon } from '@/lib/model-icons';
-import type { GroupMode, GroupRelayConfig } from '@/api/group';
+import type { GroupMode } from '@/api/group';
 import type { SelectedMember } from './ItemList';
 import { MemberList } from './ItemList';
 import { matchesGroupName, memberKey, normalizeKey } from './utils';
@@ -20,18 +19,7 @@ import { matchesGroupName, memberKey, normalizeKey } from './utils';
 export type GroupEditorValues = {
     name: string;
     mode: GroupMode;
-    relay_config: GroupRelayConfig;
     members: SelectedMember[];
-};
-
-// defaultRelayConfig 提供创建分组时的前端初始配置。
-const defaultRelayConfig: GroupRelayConfig = {
-    member_max_attempts: 2,
-    member_retry_interval_seconds: 1,
-    member_non_stream_response_timeout_seconds: 120,
-    member_stream_first_event_timeout_seconds: 30,
-    member_cooldown_seconds: 60,
-    member_affinity_seconds: 0,
 };
 
 // PROTOCOL_TAGS 是凭据行上的协议标识。
@@ -314,7 +302,6 @@ export function GroupEditor({
     initial?: {
         name?: string;
         mode?: GroupMode;
-        relay_config?: Partial<GroupRelayConfig>;
         members?: SelectedMember[];
     };
     submitText: string;
@@ -339,10 +326,6 @@ export function GroupEditor({
 
     const [groupName, setGroupName] = useState(initial?.name ?? '');
     const [mode, setMode] = useState<GroupMode>(initial?.mode ?? 'manual');
-    const [relayConfig, setRelayConfig] = useState<GroupRelayConfig>(() => ({
-        ...defaultRelayConfig,
-        ...initial?.relay_config,
-    }));
     const [selectedMembers, setSelectedMembers] = useState<SelectedMember[]>(initial?.members ?? []);
     const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
 
@@ -399,7 +382,6 @@ export function GroupEditor({
         onSubmit({
             name: groupName,
             mode,
-            relay_config: relayConfig,
             members: selectedMembers,
         });
     };
@@ -439,150 +421,24 @@ export function GroupEditor({
                         </Field>
                     </div>
 
-                    <Tabs defaultValue="members" className="flex flex-1 min-h-0">
-                        <TabsList className="grid w-full shrink-0 grid-cols-2">
-                            <TabsTrigger value="members">{t('form.members')}</TabsTrigger>
-                            <TabsTrigger value="relay">{t('form.relay')}</TabsTrigger>
-                        </TabsList>
-
-                        <TabsContent value="members" className="min-h-0 overflow-hidden">
-                            <div className="grid h-full min-h-0 grid-cols-1 gap-4 md:grid-cols-2">
-                                <ModelPickerSection
-                                    grantMembers={grantMembers}
-                                    selectedMembers={selectedMembers}
-                                    onAdd={handleAddMember}
-                                    onAutoAdd={handleAutoAdd}
-                                    autoAddDisabled={autoAddDisabled}
-                                />
-                                <SortSection
-                                    members={selectedMembers}
-                                    onReorder={setSelectedMembers}
-                                    onRemove={handleRemoveMember}
-                                    removingIds={removingIds}
-                                    onClear={handleClearMembers}
-                                />
-                            </div>
-                        </TabsContent>
-
-                        <TabsContent value="relay" className="min-h-0 overflow-y-auto px-1">
-                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                                <Field>
-                                    <FieldLabel htmlFor="group-retry-count">
-                                        {t('form.retryCount')}
-                                        <FieldHelp text={t('form.retryCountHint')} />
-                                    </FieldLabel>
-                                    <Input
-                                        id="group-retry-count"
-                                        type="number"
-                                        inputMode="numeric"
-                                        min={0}
-                                        step={1}
-                                        value={String(relayConfig.member_max_attempts)}
-                                        onChange={(event) => {
-                                            const value = Number.parseInt(event.target.value, 10);
-                                            setRelayConfig((prev) => ({ ...prev, member_max_attempts: Number.isFinite(value) && value >= 1 ? value : 1 }));
-                                        }}
-                                        className="rounded-xl"
-                                    />
-                                </Field>
-                                <Field>
-                                    <FieldLabel htmlFor="group-retry-interval">
-                                        {t('form.retryInterval')}
-                                        <FieldHelp text={t('form.retryIntervalHint')} />
-                                    </FieldLabel>
-                                    <Input
-                                        id="group-retry-interval"
-                                        type="number"
-                                        inputMode="numeric"
-                                        min={1}
-                                        step={1}
-                                        value={String(relayConfig.member_retry_interval_seconds)}
-                                        onChange={(event) => {
-                                            const value = Number.parseInt(event.target.value, 10);
-                                            setRelayConfig((prev) => ({ ...prev, member_retry_interval_seconds: Number.isFinite(value) && value >= 1 ? value : 1 }));
-                                        }}
-                                        className="rounded-xl"
-                                    />
-                                </Field>
-                                <Field>
-                                    <FieldLabel htmlFor="group-non-stream-timeout">
-                                        {t('form.nonStreamTimeout')}
-                                        <FieldHelp text={t('form.nonStreamTimeoutHint')} />
-                                    </FieldLabel>
-                                    <Input
-                                        id="group-non-stream-timeout"
-                                        type="number"
-                                        inputMode="numeric"
-                                        min={1}
-                                        step={1}
-                                        value={String(relayConfig.member_non_stream_response_timeout_seconds)}
-                                        onChange={(event) => {
-                                            const value = Number.parseInt(event.target.value, 10);
-                                            setRelayConfig((prev) => ({ ...prev, member_non_stream_response_timeout_seconds: Number.isFinite(value) && value >= 1 ? value : 1 }));
-                                        }}
-                                        className="rounded-xl"
-                                    />
-                                </Field>
-                                <Field>
-                                    <FieldLabel htmlFor="group-stream-timeout">
-                                        {t('form.streamTimeout')}
-                                        <FieldHelp text={t('form.streamTimeoutHint')} />
-                                    </FieldLabel>
-                                    <Input
-                                        id="group-stream-timeout"
-                                        type="number"
-                                        inputMode="numeric"
-                                        min={1}
-                                        step={1}
-                                        value={String(relayConfig.member_stream_first_event_timeout_seconds)}
-                                        onChange={(event) => {
-                                            const value = Number.parseInt(event.target.value, 10);
-                                            setRelayConfig((prev) => ({ ...prev, member_stream_first_event_timeout_seconds: Number.isFinite(value) && value >= 1 ? value : 1 }));
-                                        }}
-                                        className="rounded-xl"
-                                    />
-                                </Field>
-                                <Field>
-                                    <FieldLabel htmlFor="group-cooldown">
-                                        {t('form.cooldown')}
-                                        <FieldHelp text={t('form.cooldownHint')} />
-                                    </FieldLabel>
-                                    <Input
-                                        id="group-cooldown"
-                                        type="number"
-                                        inputMode="numeric"
-                                        min={1}
-                                        step={1}
-                                        value={String(relayConfig.member_cooldown_seconds)}
-                                        onChange={(event) => {
-                                            const value = Number.parseInt(event.target.value, 10);
-                                            setRelayConfig((prev) => ({ ...prev, member_cooldown_seconds: Number.isFinite(value) && value >= 1 ? value : 1 }));
-                                        }}
-                                        className="rounded-xl"
-                                    />
-                                </Field>
-                                <Field>
-                                    <FieldLabel htmlFor="group-affinity">
-                                        {t('form.affinity')}
-                                        <FieldHelp text={t('form.affinityHint')} />
-                                    </FieldLabel>
-                                    <Input
-                                        id="group-affinity"
-                                        type="number"
-                                        inputMode="numeric"
-                                        min={0}
-                                        step={1}
-                                        value={String(relayConfig.member_affinity_seconds)}
-                                        onChange={(event) => {
-                                            const value = Number.parseInt(event.target.value, 10);
-                                            setRelayConfig((prev) => ({ ...prev, member_affinity_seconds: Number.isFinite(value) && value >= 0 ? value : 0 }));
-                                        }}
-                                        className="rounded-xl"
-                                    />
-                                </Field>
-                            </div>
-                        </TabsContent>
-                    </Tabs>
+                    <div className="flex-1 min-h-0 overflow-hidden">
+                        <div className="grid h-full min-h-0 grid-cols-1 gap-4 md:grid-cols-2">
+                            <ModelPickerSection
+                                grantMembers={grantMembers}
+                                selectedMembers={selectedMembers}
+                                onAdd={handleAddMember}
+                                onAutoAdd={handleAutoAdd}
+                                autoAddDisabled={autoAddDisabled}
+                            />
+                            <SortSection
+                                members={selectedMembers}
+                                onReorder={setSelectedMembers}
+                                onRemove={handleRemoveMember}
+                                removingIds={removingIds}
+                                onClear={handleClearMembers}
+                            />
+                        </div>
+                    </div>
                 </FieldGroup>
             </div>
 

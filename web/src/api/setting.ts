@@ -15,6 +15,11 @@ export const SettingKey = {
     ModelInfoUpdateInterval: 'model_info_update_interval',
     CORSAllowOrigins: 'cors_allow_origins',
     SyncModelsInterval: 'sync_models_interval',
+    FailoverMaxAttempts: 'failover_max_attempts',
+    FailoverRetryInterval: 'failover_retry_interval_seconds',
+    FailoverCooldownBase: 'failover_cooldown_base_seconds',
+    FailoverCooldownMax: 'failover_cooldown_max_seconds',
+    FailoverAffinity: 'failover_affinity_seconds',
 } as const;
 
 /**

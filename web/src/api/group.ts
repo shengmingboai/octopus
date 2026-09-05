@@ -7,16 +7,6 @@ import { groupListQueryOptions } from './queries';
 // GroupMode 表示分组的手动或故障转移路由模式。
 export type GroupMode = 'manual' | 'failover';
 
-// GroupRelayConfig 保存分组 Relay 配置。
-export interface GroupRelayConfig {
-    member_max_attempts: number;
-    member_retry_interval_seconds: number;
-    member_non_stream_response_timeout_seconds: number;
-    member_stream_first_event_timeout_seconds: number;
-    member_cooldown_seconds: number;
-    member_affinity_seconds: number;
-}
-
 // GroupItem 是分组内一条可路由的成员，对应一条渠道授权。
 // 名称、所属渠道与可用性由后端补齐：授权是 (模型, 凭据) 的组合，界面只需展示与排序，无需再按主键回查。
 export interface GroupItem {
@@ -48,7 +38,6 @@ export interface Group {
     id: number;
     name: string;
     mode: GroupMode;
-    relay_config: GroupRelayConfig;
     items: GroupItem[]; // 恒为数组，后端读取侧承诺不为 null。
     runtime: GroupRuntime; // 随分组一并返回；当前成员一律读 runtime.current_item_id。
 }
@@ -62,7 +51,6 @@ export interface GroupItemInput {
 export interface GroupCreateRequest {
     name: string;
     mode: GroupMode;
-    relay_config: GroupRelayConfig;
     items: GroupItemInput[];
 }
 
@@ -71,7 +59,6 @@ export interface GroupCreateRequest {
 export interface GroupUpdateRequest {
     name?: string;
     mode?: GroupMode;
-    relay_config?: GroupRelayConfig;
     items?: GroupItemInput[];
     active_item_id?: number; // 手动模式指定的当前成员，0 表示取消选择。
 }

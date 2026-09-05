@@ -36,7 +36,6 @@ function EditDialogContent({ group, displayMembers, isSubmitting, onSubmit }: Ed
                 initial={{
                     name: group.name,
                     mode: group.mode,
-                    relay_config: group.relay_config,
                     members: displayMembers,
                 }}
                 submitText={t('detail.actions.save')}
@@ -113,14 +112,6 @@ export const GroupCard = memo(function GroupCard({ group, now }: { group: Group;
 
         if (values.name !== group.name) payload.name = values.name;
         if (values.mode !== group.mode) payload.mode = values.mode;
-        if (
-            values.relay_config.member_max_attempts !== group.relay_config.member_max_attempts ||
-            values.relay_config.member_retry_interval_seconds !== group.relay_config.member_retry_interval_seconds ||
-            values.relay_config.member_non_stream_response_timeout_seconds !== group.relay_config.member_non_stream_response_timeout_seconds ||
-            values.relay_config.member_stream_first_event_timeout_seconds !== group.relay_config.member_stream_first_event_timeout_seconds ||
-            values.relay_config.member_cooldown_seconds !== group.relay_config.member_cooldown_seconds ||
-            values.relay_config.member_affinity_seconds !== group.relay_config.member_affinity_seconds
-        ) payload.relay_config = values.relay_config;
         // 成员集合与顺序有任一处不同就整体提交; 后端按授权主键匹配, 已有成员保留其主键与统计。
         const nextGrantIDs = values.members.map((m) => m.channel_grant_id);
         const currentGrantIDs = (group.items || []).map((item) => item.channel_grant_id);
@@ -140,7 +131,7 @@ export const GroupCard = memo(function GroupCard({ group, now }: { group: Group;
             },
             onError,
         });
-    }, [group.id, group.items, group.mode, group.name, group.relay_config, onSuccess, onError, updateGroup]);
+    }, [group.id, group.items, group.mode, group.name, onSuccess, onError, updateGroup]);
 
     return (
         <article className="flex flex-col rounded-3xl border border-border bg-card text-card-foreground p-4">

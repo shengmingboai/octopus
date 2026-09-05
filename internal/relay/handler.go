@@ -89,7 +89,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			// 分组配置和成员随时可改, 故每轮重新读取; 分组被删除时等待它重新出现。
 			group, err = op.GroupGetByName(metadata.Model)
 			if err != nil {
-				if !request.wait(ctx, model.DefaultGroupRelayConfig().MemberRetryIntervalSeconds) {
+				if !request.wait(ctx, failoverRetryInterval()) {
 					return
 				}
 				continue
@@ -100,7 +100,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			// 全部成员耗尽时等待后重新放行, 避免不冷却成员导致请求死等。
 			item := pickGroupItem(group, skipped)
 			if item.ID == 0 {
-				if !request.wait(ctx, group.RelayConfig.MemberRetryIntervalSeconds) {
+				if !request.wait(ctx, failoverRetryInterval()) {
 					return
 				}
 				clear(skipped)
@@ -111,7 +111,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			// ChannelGrantGet 一次校验齐这几种情况, 取到的授权必然可直接转发, 无需再逐项检查。
 			grant, err := op.ChannelGrantGet(item.ChannelGrantID)
 			if err != nil {
-				if !request.wait(ctx, group.RelayConfig.MemberRetryIntervalSeconds) {
+				if !request.wait(ctx, failoverRetryInterval()) {
 					return
 				}
 				continue
@@ -122,7 +122,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			// 成员指向的渠道已被删除时同样等待, 该成员可能很快被改回可用渠道。
 			channel, err := op.ChannelGet(channelModel.ChannelID)
 			if err != nil {
-				if !request.wait(ctx, group.RelayConfig.MemberRetryIntervalSeconds) {
+				if !request.wait(ctx, failoverRetryInterval()) {
 					return
 				}
 				continue
@@ -132,7 +132,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			// 分组再无可用成员时按无目标等待; 手动模式只有人工指定的这一个成员, 等待其重新启用或被切换。
 			if !channel.Enabled {
 				if group.Mode == model.GroupModeManual {
-					if !request.wait(ctx, group.RelayConfig.MemberRetryIntervalSeconds) {
+					if !request.wait(ctx, failoverRetryInterval()) {
 						return
 					}
 					continue
@@ -162,9 +162,9 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			// 先于登记本轮目标: 选中的协议是本轮目标的一部分, 需与渠道和模型一并推给界面。
 			outbound, targetProtocol, passthrough, err := buildOutbound(channel, grant, *channelKey, requestProtocol)
 
-			// 为本轮上游调用建立独立取消入口并登记当前目标; 取消原因用于区分人工中止与响应超时。
+			// 为本轮上游调用建立独立取消入口并登记当前目标; 取消原因用于区分人工中止。
 			roundCtx, cancelRoundCause := context.WithCancelCause(ctx)
-			// 人工中止和本轮完成都使用普通 canceled 原因, 超时回调则写入具体的超时错误。
+			// 人工中止和本轮完成都使用普通 canceled 原因。
 			cancelRound := func() {
 				cancelRoundCause(context.Canceled)
 			}
@@ -172,39 +172,15 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 
 			roundStartedAt := time.Now() // 本轮上游调用的开始时间, 用于统计首个有效响应耗时。
 
-			// 请求上游并等待首个有效响应: 非流式等待完整响应, 流式等待首个事件。
+			// 请求上游: 非流式等待完整响应, 流式等待首个事件。
+			// 不设超时: 上游多久返回就等多久, 只有客户端断开或人工中止能打断本轮。
 			// 同协议渠道原样直通, 跨协议渠道经转换后请求; 此时尚未写给客户端, 失败仍可换目标重试。
 			var result *upstreamResponse
 			if err == nil {
-				timeoutSeconds := group.RelayConfig.MemberNonStreamResponseTimeoutSeconds // 非流式等待完整响应, 流式分支改为首事件超时。
-				timeoutErr := errors.New("upstream non-stream response timeout")          // 具体错误用于区分超时与人工中止。
-				if metadata.Streaming {
-					timeoutSeconds = group.RelayConfig.MemberStreamFirstEventTimeoutSeconds
-					timeoutErr = errors.New("upstream stream first event timeout")
-				}
-				// 计时器取消本轮上下文, 让正在等待 HTTP 响应或首个流事件的调用及时返回。
-				timeoutTimer := time.AfterFunc(time.Duration(timeoutSeconds)*time.Second, func() {
-					cancelRoundCause(timeoutErr)
-				})
-				// 客户端与渠道协议一致时直接透传, 其余组合通过 pipeline 转换。
 				if passthrough {
 					result, err = sendPassthrough(roundCtx, format, raw, channel, outbound, metadata.Streaming, channelModel.Name)
 				} else {
 					result, err = sendConverted(roundCtx, format, raw, channel, outbound, metadata.Streaming)
-				}
-				// 上游调用返回即结束首响应等待; Stop 失败说明已到期, 主动取消可避免等待异步回调完成。
-				if !timeoutTimer.Stop() {
-					cancelRoundCause(timeoutErr)
-				}
-				if context.Cause(roundCtx) == timeoutErr {
-					err = timeoutErr
-					// 超时与响应返回同时发生时舍弃尚未提交的流结果, 避免把超时误记为成功。
-					if result != nil && result.events != nil {
-						result.events.Close()
-						if result.closeIdle != nil {
-							result.closeIdle()
-						}
-					}
 				}
 			}
 
@@ -217,7 +193,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 					request.markCanceled(ctx.Err(), "", nil)
 					return
 				}
-				// 仅人工中止本轮时不计失败也不等待; 响应超时属于真实失败并消耗尝试次数。
+				// 仅人工中止本轮时不计失败也不等待。
 				if context.Cause(roundCtx) == context.Canceled {
 					releaseRouteProbe(group, item.ID)
 					continue
@@ -241,7 +217,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 					skipped[item.ID] = true
 					continue
 				}
-				if !request.wait(ctx, group.RelayConfig.MemberRetryIntervalSeconds) {
+				if !request.wait(ctx, failoverRetryInterval()) {
 					return
 				}
 				continue

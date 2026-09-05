@@ -20,12 +20,11 @@ export function CreateDialogContent() {
                     submittingText={t('create.submitting')}
                     isSubmitting={createGroup.isPending}
                     onCancel={() => setIsOpen(false)}
-                    onSubmit={({ name, mode, relay_config, members }) => {
+                    onSubmit={({ name, mode, members }) => {
                         createGroup.mutate(
                             {
                                 name,
                                 mode,
-                                relay_config,
                                 items: members.map((member) => ({ channel_grant_id: member.channel_grant_id })),
                             },
                             {

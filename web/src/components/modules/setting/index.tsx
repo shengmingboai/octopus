@@ -1,5 +1,6 @@
 import { SettingAppearance } from './Appearance';
 import { SettingSystem } from './System';
+import { SettingFailover } from './Failover';
 import { SettingAPIKey } from './APIKey';
 import { SettingLLMPrice } from './LLMPrice';
 import { SettingSync } from './Sync';
@@ -17,9 +18,10 @@ export function Setting() {
                 <SettingAppearance />
                 <SettingAccount />
                 <SettingSystem />
-                <SettingLog />
+                {/*<SettingLog />*/}
                 <SettingLLMPrice />
                 <SettingSync />
+                <SettingFailover />
                 <SettingAPIKey />
                 <SettingBackup />
             </div>

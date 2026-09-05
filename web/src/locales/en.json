@@ -175,6 +175,29 @@
             "example": "Only allow specific domains: https://example.com,https://example2.com"
         },
         "saved": "Saved",
+        "failover": {
+            "title": "Failover Strategy",
+            "maxAttempts": {
+                "label": "Maximum Attempts",
+                "hint": "Total attempts per member, including the first request"
+            },
+            "retryInterval": {
+                "label": "Retry Interval (s)",
+                "hint": "Wait time between attempts on the same member"
+            },
+            "cooldownBase": {
+                "label": "Base Cooldown (s)",
+                "hint": "Initial cooldown after a member's retries are exhausted, doubling on each consecutive trip"
+            },
+            "cooldownMax": {
+                "label": "Max Cooldown (s)",
+                "hint": "Upper bound of the exponential backoff cooldown"
+            },
+            "affinity": {
+                "label": "Affinity (s)",
+                "hint": "Time to keep the fallback member after its first successful request, 0 to disable"
+            }
+        },
         "backup": {
             "title": "Backup / Restore",
             "export": {
@@ -344,19 +367,6 @@
             "manual": "Manual",
             "failover": "Failover",
             "members": "Members",
-            "relay": "Routing",
-            "retryCount": "Maximum Attempts",
-            "retryCountHint": "Total attempts per member, including the first request",
-            "retryInterval": "Retry Interval (s)",
-            "retryIntervalHint": "Wait time between attempts on the same member",
-            "nonStreamTimeout": "Non-stream Timeout (s)",
-            "nonStreamTimeoutHint": "Maximum wait for a complete non-stream response",
-            "streamTimeout": "Stream First Event Timeout (s)",
-            "streamTimeoutHint": "Maximum wait for the first valid stream event",
-            "cooldown": "Cooldown (s)",
-            "cooldownHint": "Time a member is paused after retries are exhausted",
-            "affinity": "Failover Affinity (s)",
-            "affinityHint": "Time to keep the fallback member after its first successful request",
             "items": "Member Order",
             "addItem": "Add Model",
             "autoAdd": "Auto Add",

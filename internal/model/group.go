@@ -8,62 +8,12 @@ const (
 	GroupModeFailover GroupMode = "failover" // 按成员排序选择并在失败时切换。
 )
 
-// 分组 Relay 的持久化配置，数据库中以 JSON 存储。
-type GroupRelayConfig struct {
-	MemberMaxAttempts                     int `json:"member_max_attempts" binding:"omitempty,min=1"`                        // 单个成员包含首次请求的总尝试次数，仅在故障转移模式生效。
-	MemberRetryIntervalSeconds            int `json:"member_retry_interval_seconds" binding:"omitempty,min=1"`              // 同一成员相邻两次尝试之间的等待秒数。
-	MemberNonStreamResponseTimeoutSeconds int `json:"member_non_stream_response_timeout_seconds" binding:"omitempty,min=1"` // 单个成员返回完整非流式响应的超时秒数。
-	MemberStreamFirstEventTimeoutSeconds  int `json:"member_stream_first_event_timeout_seconds" binding:"omitempty,min=1"`  // 单个成员返回首个有效流事件的超时秒数。
-	MemberCooldownSeconds                 int `json:"member_cooldown_seconds" binding:"omitempty,min=1"`                    // 单个成员耗尽尝试后被跳过的秒数，仅在故障转移模式生效。
-	MemberAffinitySeconds                 int `json:"member_affinity_seconds" binding:"omitempty,min=0"`                    // 成员亲和时间:故障切换成功后继续保持当前成员的秒数;当前成员失败会立即结束亲和,0 表示不保持。
-}
-
-// DefaultGroupRelayConfig 返回新分组使用的 Relay 默认配置。
-func DefaultGroupRelayConfig() GroupRelayConfig {
-	return GroupRelayConfig{
-		MemberMaxAttempts:                     2,
-		MemberRetryIntervalSeconds:            3,
-		MemberNonStreamResponseTimeoutSeconds: 120,
-		MemberStreamFirstEventTimeoutSeconds:  30,
-		MemberCooldownSeconds:                 60,
-		MemberAffinitySeconds:                 300,
-	}
-}
-
-// NormalizeGroupRelayConfig 补齐分组 Relay 配置中的空值。
-func NormalizeGroupRelayConfig(config *GroupRelayConfig) {
-	defaults := DefaultGroupRelayConfig()
-	if *config == (GroupRelayConfig{}) {
-		*config = defaults
-		return
-	}
-	if config.MemberMaxAttempts < 1 {
-		config.MemberMaxAttempts = defaults.MemberMaxAttempts
-	}
-	if config.MemberRetryIntervalSeconds < 1 {
-		config.MemberRetryIntervalSeconds = defaults.MemberRetryIntervalSeconds
-	}
-	if config.MemberNonStreamResponseTimeoutSeconds < 1 {
-		config.MemberNonStreamResponseTimeoutSeconds = defaults.MemberNonStreamResponseTimeoutSeconds
-	}
-	if config.MemberStreamFirstEventTimeoutSeconds < 1 {
-		config.MemberStreamFirstEventTimeoutSeconds = defaults.MemberStreamFirstEventTimeoutSeconds
-	}
-	if config.MemberCooldownSeconds < 1 {
-		config.MemberCooldownSeconds = defaults.MemberCooldownSeconds
-	}
-	if config.MemberAffinitySeconds < 0 {
-		config.MemberAffinitySeconds = defaults.MemberAffinitySeconds
-	}
-}
-
 // 客户端模型名称及其可手动选择或故障转移的上游分组。
 type Group struct {
 	ID           int              `json:"id" gorm:"primaryKey"`                                                          // 分组主键。
 	Name         string           `json:"name" gorm:"unique;not null"`                                                   // 客户端请求使用的模型名称。
 	Mode         GroupMode        `json:"mode" gorm:"not null;default:manual" binding:"omitempty,oneof=manual failover"` // 选择成员的模式。
 	ActiveItemID int              `json:"active_item_id" gorm:"not null;default:0"`                                      // 手动模式指定的成员, 故障转移模式忽略该值, 0 表示未指定; 写入侧字段, 读取一律用响应中的 runtime.current_item_id, 出 JSON 仅为让备份转储带上它。
-	RelayConfig  GroupRelayConfig `json:"relay_config" gorm:"serializer:json"`                                           // 该分组的 Relay 路由配置。
 	Items        []GroupItem      `json:"items" gorm:"foreignKey:GroupID;constraint:OnDelete:CASCADE"`                   // 该分组可手动选择或故障转移的分组项; 读取时恒为数组, 空集合也给出以免各消费方各自兜底。
 }
 
@@ -91,7 +41,6 @@ type GroupItem struct {
 type GroupCreateRequest struct {
 	Name        string           `json:"name" binding:"required"`                        // 客户端请求使用的模型名称。
 	Mode        GroupMode        `json:"mode" binding:"omitempty,oneof=manual failover"` // 选择成员的模式, 留空按手动。
-	RelayConfig GroupRelayConfig `json:"relay_config"`                                   // Relay 路由配置, 零值由后端补默认。
 	Items       []GroupItemInput `json:"items"`                                          // 初始成员集合。
 }
 
@@ -100,7 +49,6 @@ type GroupCreateRequest struct {
 type GroupUpdateRequest struct {
 	Name         *string           `json:"name,omitempty"`                                           // Name 仅在名称变更时发送。
 	Mode         *GroupMode        `json:"mode,omitempty" binding:"omitempty,oneof=manual failover"` // Mode 仅在选择模式变更时发送。
-	RelayConfig  *GroupRelayConfig `json:"relay_config,omitempty"`                                   // RelayConfig 仅在 Relay 配置变更时发送完整配置。
 	Items        *[]GroupItemInput `json:"items,omitempty"`                                          // 新的成员集合, 整体替换; 提交顺序即优先级顺序。
 	ActiveItemID *int              `json:"active_item_id,omitempty"`                                 // 手动模式指定的当前成员, 0 表示取消选择; 用指针以便与"未提交该字段"区分。
 }
