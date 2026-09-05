@@ -16,6 +16,15 @@ export interface RelayUsage {
     } | null;
 }
 
+// RelayLogRound 是请求内单轮上游调用的过程记录。
+export interface RelayLogRound {
+    round: number;
+    channel: string;
+    model: string;
+    error?: string;
+    sending: boolean;
+}
+
 // RelayLogOverview 是请求状态流发送的完整进程内请求状态。
 export interface RelayLogOverview {
     id: number;
@@ -33,6 +42,7 @@ export interface RelayLogOverview {
     target_protocol: number;
     sending: boolean;
     error?: string;
+    rounds?: RelayLogRound[];
 }
 
 // useClearLogs 清空已完成的内存日志。

@@ -23,6 +23,15 @@ const (
 	StatusCanceled  Status = "canceled"  // 客户端提前断开或取消。
 )
 
+// RoundState 是请求内单轮上游调用的过程记录, 随状态流推送供界面回放完整重试链路。
+type RoundState struct {
+	Round   int    `json:"round"`           // 请求内递增的轮次序号。
+	Channel string `json:"channel"`         // 本轮实际请求的渠道名称。
+	Model   string `json:"model"`           // 本轮实际请求上游的模型名称。
+	Error   string `json:"error,omitempty"` // 本轮失败原因, 空表示已取得可提交响应。
+	Sending bool   `json:"sending"`         // 本轮是否仍在等待上游响应。
+}
+
 // 客户端请求的完整进程内状态, 同时作为状态流的消息形状; 上半部分在请求到达时写入并在结束时定稿, 下半部分每轮循环覆盖。
 type RequestState struct {
 	ID        uint64         `json:"id"`         // 请求在当前进程内的唯一标识。
@@ -41,6 +50,7 @@ type RequestState struct {
 	TargetProtocol model.Protocol `json:"target_protocol"` // 最新一轮实际请求上游的协议, 与 Protocol 不同即本轮做了跨协议转换; 0 表示尚未选出。
 	Sending        bool           `json:"sending"`         // 最新一轮是否仍在等待上游响应。
 	Error          string         `json:"error,omitempty"` // 最新一轮的失败原因, 请求结束后即为最终错误。
+	Rounds         []RoundState   `json:"rounds,omitempty"` // 历轮调用记录, 界面借此回放每次重试的目标与失败原因。
 
 	body         string             // 客户端原始请求体, 体积大故不进状态流, 由独立接口按需拉取。
 	responseBody string             // 聚合后的完整最终响应体, 同样按需拉取。
@@ -90,6 +100,7 @@ func (r *RequestState) startRound(cancel context.CancelFunc, channel, modelName 
 	r.Sending = true
 	r.Error = ""
 	r.cancel = cancel
+	r.Rounds = append(r.Rounds, RoundState{Round: r.Round, Channel: channel, Model: modelName, Sending: true})
 	publishRequestLocked(r)
 	return r.Round
 }
@@ -102,6 +113,10 @@ func (r *RequestState) finishRound(errText string) {
 	r.Sending = false
 	r.Error = errText
 	r.cancel = nil
+	if n := len(r.Rounds); n > 0 && r.Rounds[n-1].Round == r.Round {
+		r.Rounds[n-1].Sending = false
+		r.Rounds[n-1].Error = errText
+	}
 	publishRequestLocked(r)
 }
 
