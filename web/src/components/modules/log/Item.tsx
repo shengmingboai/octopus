@@ -63,7 +63,7 @@ function LogMetrics({ log, now, brandColor, variant }: { log: RelayLogOverview; 
     const metrics = [
         { key: 'time', Icon: Clock, iconClassName: 'size-3.5 shrink-0', iconStyle: { color: brandColor } as CSSProperties, value: formatTime(log.started_at), valueClassName: 'tabular-nums', cellClassName: 'col-span-4 md:col-span-1' },
         { key: 'duration', Icon: Timer, iconClassName: 'size-3.5 shrink-0 text-blue-500', value: firstTokenMs > 0 ? `${formatMilliseconds(firstTokenMs)} / ${formatMilliseconds(durationMs)}` : formatMilliseconds(durationMs), cellClassName: 'col-span-4 md:col-span-1' },
-        { key: 'speed', Icon: Zap, iconClassName: 'size-3.5 shrink-0 text-orange-500', value: durationMs > 0 ? (log.usage.completion_tokens / (durationMs / 1000)).toFixed(1) : '--', cellClassName: 'col-span-4 md:col-span-1' },
+        { key: 'speed', Icon: Zap, iconClassName: 'size-3.5 shrink-0 text-orange-500', value: durationMs > 0 ? `${(log.usage.completion_tokens / (durationMs / 1000)).toFixed(1)} t/s` : '--', cellClassName: 'col-span-4 md:col-span-1' },
         { key: 'prompt', Icon: ArrowDownToLine, iconClassName: 'size-3.5 shrink-0 text-emerald-500', value: log.usage.prompt_tokens.toLocaleString(), cellClassName: 'col-span-4 md:col-span-1' },
         { key: 'completion', Icon: ArrowUpFromLine, iconClassName: 'size-3.5 shrink-0 text-violet-500', value: log.usage.completion_tokens.toLocaleString(), cellClassName: 'col-span-4 md:col-span-1' },
         { key: 'cached', Icon: Database, iconClassName: 'size-3.5 shrink-0 text-orange-500', value: (log.usage.prompt_tokens_details?.cached_tokens ?? 0).toLocaleString(), cellClassName: 'col-span-4 md:col-span-1' },
