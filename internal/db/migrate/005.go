@@ -24,8 +24,11 @@ func migrateChannelToSingleURLAndKey(db *gorm.DB) error {
 	if !db.Migrator().HasTable("channels") {
 		return nil
 	}
-	if !db.Migrator().HasColumn("channels", "base_url") || !db.Migrator().HasColumn("channels", "key") {
-		return fmt.Errorf("channels.base_url or channels.key not found")
+	// 新架构中凭据已拆分到 channel_keys，channels.key 可能不存在（如全新部署），此时无需收敛渠道级 key。
+	// 注意用 hasPhysicalColumn 而非 HasColumn：glebarez sqlite 的 HasColumn 对建表 SQL 做 LIKE 匹配，
+	// "PRIMARY KEY AUTOINCREMENT" 会被误判为存在 key 列。
+	if !hasPhysicalColumn(db, "channels", "base_url") {
+		return fmt.Errorf("channels.base_url not found")
 	}
 
 	if db.Migrator().HasColumn("channels", "base_urls") {
@@ -58,7 +61,7 @@ func migrateChannelToSingleURLAndKey(db *gorm.DB) error {
 		}
 	}
 
-	if db.Migrator().HasTable("channel_keys") && hasPhysicalColumn(db, "channel_keys", "channel_key") {
+	if hasPhysicalColumn(db, "channels", "key") && db.Migrator().HasTable("channel_keys") && hasPhysicalColumn(db, "channel_keys", "channel_key") {
 		type legacyChannelKey struct {
 			ChannelID  int    `gorm:"column:channel_id"`  // 所属渠道主键。
 			ChannelKey string `gorm:"column:channel_key"` // 旧凭据值。
