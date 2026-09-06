@@ -183,6 +183,11 @@ func (r *RequestState) markFailed(err error, responseBody string, usage *llm.Usa
 
 	r.Status = StatusFailed
 	r.Error = err.Error()
+	// 流式请求在首帧到达时本轮已按可提交响应定稿, 流中途出现的失败只写入顶层错误;
+	// 此处把最终错误回写到最后一轮, 让详情页的轮次记录与卡片展示的错误保持一致。
+	if n := len(r.Rounds); n > 0 && r.Rounds[n-1].Error == "" {
+		r.Rounds[n-1].Error = r.Error
+	}
 	if responseBody != "" {
 		r.responseBody = responseBody
 	}
