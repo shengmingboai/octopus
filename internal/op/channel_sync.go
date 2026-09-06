@@ -31,7 +31,8 @@ func AutoSyncChannelIDs() []int {
 //   - 已有的模型×凭据授权: 只翻转 Missing 标记, 协议位永不改写 —— 用户首次确认的协议永久生效,
 //     模型上游消失时标记 Missing 保留在库(分组项与统计都不动), 恢复后按原协议原位置复活。
 //   - 渠道开启自动入组时, 新引入的模型若与某分组名忽略大小写精确一致, 其新授权自动加为该分组成员,
-//     排在现有成员之后; 只有新模型入组, 已有模型的新授权仍由用户自行管理。
+//     排在现有成员之后; 从上游消失恢复的授权按同样规则重新入组, 已在该分组的成员不重复入组;
+//     其余已有模型的授权仍由用户自行管理。
 func ChannelSyncApply(channelID int, probeByKeyName map[string][]model.ChannelFetchModel, ctx context.Context) (*model.ChannelSyncResult, error) {
 	channel, ok := channelCache.Get(channelID)
 	if !ok {
@@ -173,6 +174,24 @@ func ChannelSyncApply(channelID int, probeByKeyName map[string][]model.ChannelFe
 						return fmt.Errorf("failed to restore channel grant: %w", err)
 					}
 					result.RestoredGrants++
+					// 复活的授权与新模型同规则自动入组: 上游恢复即重新成为成员, 排在现有成员之后,
+					// 分组项被手动移除过的也由此回来; 已在该分组的不重复入组。
+					if groupID, ok := matchGroup(modelName); ok {
+						var count int64
+						if err := tx.Model(&model.GroupItem{}).
+							Where("group_id = ? AND channel_grant_id = ?", groupID, grant.ID).
+							Count(&count).Error; err != nil {
+							return fmt.Errorf("failed to load group item: %w", err)
+						}
+						if count == 0 {
+							pendingItems = append(pendingItems, pendingItem{
+								groupID:   groupID,
+								grantID:   grant.ID,
+								modelName: modelName,
+								keyName:   keyName,
+							})
+						}
+					}
 				}
 			}
 
