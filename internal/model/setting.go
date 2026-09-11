@@ -15,7 +15,8 @@ const (
 	SettingKeyStatsSaveInterval       SettingKey = "stats_save_interval"        // 将统计信息写入数据库的周期(分钟)
 	SettingKeyModelInfoUpdateInterval SettingKey = "model_info_update_interval" // 模型信息更新间隔(小时)
 	SettingKeyCORSAllowOrigins        SettingKey = "cors_allow_origins"         // 跨域白名单(逗号分隔, 如 "example.com,example2.com"). 为空不允许跨域, "*"允许所有
-	SettingKeyModelFilter             SettingKey = "model_filter"              // 渠道获取模型时的全局过滤表达式; 留空表示不过滤
+	SettingKeyModelFilter             SettingKey = "model_filter"               // 渠道获取模型时的全局过滤表达式; 留空表示不过滤
+	SettingKeySyncLLMInterval         SettingKey = "sync_llm_interval"          // 自动拉取模型列表的间隔(小时), 0 表示不自动拉取
 )
 
 type Setting struct {
@@ -30,6 +31,7 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyCORSAllowOrigins, Value: ""},          // CORS 默认不允许跨域，设置为 "*" 才允许所有来源
 		{Key: SettingKeyModelInfoUpdateInterval, Value: "24"}, // 默认24小时更新一次模型信息
 		{Key: SettingKeyModelFilter, Value: ""},               // 默认不过滤模型
+		{Key: SettingKeySyncLLMInterval, Value: "24"},         // 默认24小时自动拉取一次模型列表
 	}
 }
 
@@ -39,6 +41,12 @@ func (s *Setting) Validate() error {
 		_, err := strconv.Atoi(s.Value)
 		if err != nil {
 			return fmt.Errorf("model info update interval must be an integer")
+		}
+		return nil
+	case SettingKeySyncLLMInterval:
+		_, err := strconv.Atoi(s.Value)
+		if err != nil {
+			return fmt.Errorf("sync llm interval must be an integer")
 		}
 		return nil
 	case SettingKeyModelFilter:

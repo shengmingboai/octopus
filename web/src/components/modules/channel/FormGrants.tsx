@@ -4,6 +4,7 @@ import { useTranslations } from 'use-intl';
 import { Protocol } from '@/api/channel';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import {
     Select,
     SelectContent,
@@ -98,7 +99,7 @@ export function FormGrants({ state, setState }: {
 
     const keyNames = state.keys.map((k) => k.name);
     const activeKey = selectedKey || keyNames[0] || '';
-    const allExpanded = state.models.length > 0 && state.models.every((m) => expanded.has(m));
+    const allExpanded = state.models.length > 0 && state.models.every((m) => expanded.has(m.name));
 
     // removeGrant 移除该模型在指定凭据上的授权, 模型与凭据本身保留。
     const removeGrant = (modelName: string, keyName: string) => {
@@ -110,7 +111,16 @@ export function FormGrants({ state, setState }: {
     const removeModel = (modelName: string) => {
         const grants = new Map(state.grants);
         for (const keyName of keyNames) grants.delete(grantKey(modelName, keyName));
-        setState({ ...state, models: state.models.filter((m) => m !== modelName), grants });
+        setState({ ...state, models: state.models.filter((m) => m.name !== modelName), grants });
+    };
+
+    // 开关模型即人工接管: 来源转为 manual, 自动拉取不再增删改它, 启停从此完全由用户决定。
+    // 否则开关过再被上游恢复的模型会被自动重新启用, 用户留下的停用会被改掉。
+    const toggleModel = (modelName: string, enabled: boolean) => {
+        setState({
+            ...state,
+            models: state.models.map((m) => (m.name === modelName ? { ...m, source: 'manual', enabled } : m)),
+        });
     };
 
     // 自定义模型直接授权给当前选中的凭据, 协议位沿用该凭据在其他模型上已有的并集。
@@ -118,14 +128,14 @@ export function FormGrants({ state, setState }: {
     // 与探测的默认一致: Chat Completions 已被官方标记弃用, 需要它的渠道由用户手动勾选 Chat 列。
     const addModel = () => {
         const name = adding.trim();
-        if (!name || state.models.includes(name)) return;
+        if (!name || state.models.some((m) => m.name === name)) return;
         let protocols = 0;
-        for (const modelName of state.models) {
+        for (const { name: modelName } of state.models) {
             protocols |= state.grants.get(grantKey(modelName, activeKey)) ?? 0;
         }
         const grants = new Map(state.grants);
         if (activeKey) grants.set(grantKey(name, activeKey), protocols || Protocol.OpenAIResponse);
-        setState({ ...state, models: [...state.models, name], grants });
+        setState({ ...state, models: [...state.models, { name, source: 'manual', enabled: true }], grants });
         setAdding('');
     };
 
@@ -155,7 +165,7 @@ export function FormGrants({ state, setState }: {
                 />
                 <IconButton
                     onClick={addModel}
-                    disabled={!adding.trim() || state.models.includes(adding.trim())}
+                    disabled={!adding.trim() || state.models.some((m) => m.name === adding.trim())}
                     className="size-9"
                     tip={t('modelAdd')}
                 >
@@ -177,7 +187,7 @@ export function FormGrants({ state, setState }: {
                 <div className="flex items-center gap-1 px-3 py-2 border-b border-border bg-muted/30 shrink-0">
                     {/* 全部展开与全部折叠共用一个按钮: 已全展开时折叠, 否则展开全部。 */}
                     <IconButton
-                        onClick={() => setExpanded(allExpanded ? new Set() : new Set(state.models))}
+                        onClick={() => setExpanded(allExpanded ? new Set() : new Set(state.models.map((m) => m.name)))}
                         disabled={state.models.length === 0}
                         className="size-5"
                         tip={allExpanded ? t('grantCollapseAll') : t('grantExpandAll')}
@@ -190,7 +200,7 @@ export function FormGrants({ state, setState }: {
                     {/* 表头覆盖全部模型全部凭据, 故勾选即批量, 删除即清空全部模型及其授权。 */}
                     <GrantCells
                         state={state} setState={setState}
-                        models={state.models} keyNames={keyNames}
+                        models={state.models.map((m) => m.name)} keyNames={keyNames}
                         remove={() => setState({ ...state, models: [], grants: new Map() })}
                         icon={Eraser}
                         tip={t('grantClearAll')}
@@ -200,13 +210,14 @@ export function FormGrants({ state, setState }: {
                 <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
                     {state.models.length === 0 ? (
                         <p className="px-3 py-6 text-center text-sm text-muted-foreground">{t('modelNoSelected')}</p>
-                    ) : state.models.map((modelName) => {
+                    ) : state.models.map((channelModel) => {
+                        const modelName = channelModel.name;
                         const isOpen = expanded.has(modelName);
                         const granted = keyNames.filter(
                             (keyName) => (state.grants.get(grantKey(modelName, keyName)) ?? 0) !== 0
                         ).length;
                         return (
-                            <div key={modelName} className="border-b border-border last:border-0">
+                            <div key={modelName} className={`border-b border-border last:border-0 ${channelModel.enabled ? '' : 'opacity-45'}`}>
                                 <div className="flex items-center gap-1 px-3 py-2">
                                     <button
                                         type="button"
@@ -223,6 +234,11 @@ export function FormGrants({ state, setState }: {
                                             {granted}/{keyNames.length}
                                         </span>
                                     </button>
+                                    {/* 启停一行一个开关; 自动拉取得到的模型默认开启, 开关即转为人工管理。 */}
+                                    <Switch
+                                        checked={channelModel.enabled}
+                                        onCheckedChange={(checked) => toggleModel(modelName, checked)}
+                                    />
                                     <GrantCells
                                         state={state} setState={setState}
                                         models={[modelName]} keyNames={keyNames}

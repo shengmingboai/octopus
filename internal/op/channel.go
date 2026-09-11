@@ -40,6 +40,7 @@ func ChannelStatsList() []model.ChannelStats {
 		modelsByChannel[channelModel.ChannelID] = append(modelsByChannel[channelModel.ChannelID], model.ChannelModelStats{
 			ModelID:      channelModel.ID,
 			ModelName:    channelModel.Name,
+			Enabled:      channelModel.Enabled,
 			StatsMetrics: channelModel.StatsMetrics,
 		})
 	}
@@ -104,7 +105,7 @@ func ChannelUpdate(detail *model.ChannelDetail, ctx context.Context) (*model.Cha
 		if err := tx.Model(&model.Channel{}).Where("id = ?", detail.ID).
 			Select("name", "dialect", "enabled", "base_url",
 				"openai_chat_completion_path", "openai_response_path", "anthropic_message_path",
-				"proxy", "channel_proxy", "custom_header", "param_override", "match_regex").
+				"proxy", "channel_proxy", "custom_header", "param_override", "match_regex", "auto_sync").
 			Updates(&model.Channel{ChannelConfig: detail.ChannelConfig}).Error; err != nil {
 			return fmt.Errorf("failed to update channel: %w", err)
 		}
@@ -187,9 +188,16 @@ func normalizeChannelDetail(detail *model.ChannelDetail) error {
 		detail.Keys[i].Key = strings.TrimSpace(detail.Keys[i].Key)
 	}
 	for i := range detail.Models {
-		detail.Models[i] = strings.TrimSpace(detail.Models[i])
-		if detail.Models[i] == "" {
+		detail.Models[i].Name = strings.TrimSpace(detail.Models[i].Name)
+		if detail.Models[i].Name == "" {
 			return fmt.Errorf("channel model name is required")
+		}
+		// 来源留空按人工处理: 未声明来源的模型视为界面手工维护, 不交给自动拉取增删改。
+		if detail.Models[i].Source == "" {
+			detail.Models[i].Source = model.ChannelModelSourceManual
+		}
+		if detail.Models[i].Source != model.ChannelModelSourceManual && detail.Models[i].Source != model.ChannelModelSourceAuto {
+			return fmt.Errorf("channel model source %q is invalid", detail.Models[i].Source)
 		}
 	}
 	for i := range detail.Grants {
@@ -275,6 +283,15 @@ func ChannelDel(id int, ctx context.Context) error {
 	return nil
 }
 
+// ChannelIDs 返回全部渠道的主键; 顺序无定稿, 调用方各自处理排序。
+func ChannelIDs() []int {
+	ids := make([]int, 0, channelCache.Len())
+	for _, channel := range channelCache.GetAll() {
+		ids = append(ids, channel.ID)
+	}
+	return ids
+}
+
 // ChannelGet 返回指定渠道的缓存副本, 供转发按地址, 路径与代理构造上游请求。
 // 不补齐凭据, 模型与授权: 转发所需的授权由 ChannelGrantGet 按主键单独取, 那里已连带给出两侧。
 func ChannelGet(id int) (model.Channel, error) {
@@ -286,8 +303,8 @@ func ChannelGet(id int) (model.Channel, error) {
 }
 
 // ChannelGrantGet 返回可用于转发的渠道授权, 并补齐其模型与凭据。
-// 凭据被停用, 以及模型, 凭据缺失时一律返回错误, 使调用方拿到的授权必然可直接转发, 无需再逐项检查。
-// 授权本身没有停用状态: 不再授权就删掉该组合, 无需保留一行停用记录。
+// 模型或凭据被停用, 以及两侧任一缺失时一律返回错误, 使调用方拿到的授权必然可直接转发, 无需再逐项检查。
+// 授权本身没有停用状态: 临时收回由模型或凭据的停用承担, 不再授权就删掉该组合, 无需保留一行停用记录。
 func ChannelGrantGet(id int) (model.ChannelGrant, error) {
 	grant, ok := channelGrantCache.Get(id)
 	if !ok {
@@ -301,6 +318,9 @@ func ChannelGrantGet(id int) (model.ChannelGrant, error) {
 	if !ok {
 		return model.ChannelGrant{}, fmt.Errorf("channel key %d not found", grant.ChannelKeyID)
 	}
+	if !channelModel.Enabled {
+		return model.ChannelGrant{}, fmt.Errorf("channel model %d is disabled", channelModel.ID)
+	}
 	if !channelKey.Enabled {
 		return model.ChannelGrant{}, fmt.Errorf("channel key %d is disabled", channelKey.ID)
 	}
@@ -310,7 +330,7 @@ func ChannelGrantGet(id int) (model.ChannelGrant, error) {
 }
 
 // ChannelGrantCandidates 返回全部渠道授权及其展示字段, 供分组页选取成员。
-// 可用性与 GroupList 补齐成员时同一口径: 渠道与凭据均启用即可用, 由此候选与已选成员不会各判一套。
+// 可用性与 GroupList 补齐成员时同一口径: 渠道与凭据及模型均启用即可用, 由此候选与已选成员不会各判一套。
 // 两侧任一缺失的授权直接跳过: 它无法转发, 也无从展示名称。
 func ChannelGrantCandidates() []model.ChannelGrantCandidate {
 	candidates := make([]model.ChannelGrantCandidate, 0, channelGrantCache.Len())
@@ -331,7 +351,7 @@ func ChannelGrantCandidates() []model.ChannelGrantCandidate {
 			ModelName:   channelModel.Name,
 			KeyName:     channelKey.Name,
 			Protocols:   grant.Protocols,
-			Available:   channel.Enabled && channelKey.Enabled,
+			Available:   channel.Enabled && channelModel.Enabled && channelKey.Enabled,
 		})
 	}
 	// 按渠道, 模型, 凭据三级定序: 分组页按这三级组织候选且不提供排序开关, 顺序须由此处定稿。
@@ -471,15 +491,19 @@ func channelDetail(channel model.Channel) model.ChannelDetail {
 	}
 	sort.Slice(detail.Keys, func(i, j int) bool { return detail.Keys[i].Name < detail.Keys[j].Name })
 
-	detail.Models = make([]string, 0)
+	detail.Models = make([]model.ChannelModelConfig, 0)
 	modelNameByID := make(map[int]string)
 	for _, channelModel := range channelModelCache.GetAll() {
 		if channelModel.ChannelID == channel.ID {
-			detail.Models = append(detail.Models, channelModel.Name)
+			detail.Models = append(detail.Models, model.ChannelModelConfig{
+				Name:    channelModel.Name,
+				Source:  channelModel.Source,
+				Enabled: channelModel.Enabled,
+			})
 			modelNameByID[channelModel.ID] = channelModel.Name
 		}
 	}
-	sort.Strings(detail.Models)
+	sort.Slice(detail.Models, func(i, j int) bool { return detail.Models[i].Name < detail.Models[j].Name })
 
 	// 授权按模型主键归属本渠道, 两侧主键在此翻译成名称。
 	grants := make([]model.ChannelGrantConfig, 0)
@@ -558,9 +582,10 @@ func syncChannelKeys(tx *gorm.DB, channelID int, requested []model.ChannelKeyCon
 	return nil
 }
 
-// syncChannelModels 按提交的模型名称集合新增与删除渠道模型。
-// 模型在渠道内按名称唯一, 除名称外无可更新字段, 故提交侧直接给名称; 删除模型会级联删除其渠道授权。
-func syncChannelModels(tx *gorm.DB, channelID int, requested []string) error {
+// syncChannelModels 按提交的模型集合新增, 更新与删除渠道模型。
+// 模型在渠道内按名称唯一, 名称作为匹配依据; 更新只动来源与启停, 统计不在提交范围, 由重载缓存时搬回;
+// 删除模型会级联删除其渠道授权。自动拉取把不再提供的模型按 Enabled 为假提交而不是省略, 其授权因此保留待恢复。
+func syncChannelModels(tx *gorm.DB, channelID int, requested []model.ChannelModelConfig) error {
 	var existing []model.ChannelModel
 	if err := tx.Where("channel_id = ?", channelID).Find(&existing).Error; err != nil {
 		return fmt.Errorf("failed to load channel models: %w", err)
@@ -570,11 +595,22 @@ func syncChannelModels(tx *gorm.DB, channelID int, requested []string) error {
 		existingByName[channelModel.Name] = channelModel
 	}
 	for _, requestedModel := range requested {
-		if _, ok := existingByName[requestedModel]; ok {
-			delete(existingByName, requestedModel)
+		if current, ok := existingByName[requestedModel.Name]; ok {
+			if current.Enabled != requestedModel.Enabled || current.Source != requestedModel.Source {
+				if err := tx.Model(&model.ChannelModel{}).Where("id = ?", current.ID).
+					Updates(map[string]any{"enabled": requestedModel.Enabled, "source": requestedModel.Source}).Error; err != nil {
+					return fmt.Errorf("failed to update channel model: %w", err)
+				}
+			}
+			delete(existingByName, requestedModel.Name)
 			continue
 		}
-		if err := tx.Create(&model.ChannelModel{ChannelID: channelID, Name: requestedModel}).Error; err != nil {
+		if err := tx.Create(&model.ChannelModel{
+			ChannelID: channelID,
+			Name:      requestedModel.Name,
+			Source:    requestedModel.Source,
+			Enabled:   requestedModel.Enabled,
+		}).Error; err != nil {
 			return fmt.Errorf("failed to create channel model: %w", err)
 		}
 	}

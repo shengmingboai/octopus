@@ -14,6 +14,7 @@ import (
 	"github.com/bestruirui/octopus/internal/server/resp"
 	"github.com/bestruirui/octopus/internal/server/router"
 	"github.com/bestruirui/octopus/internal/task"
+	"github.com/charmbracelet/log"
 	"github.com/gin-gonic/gin"
 )
 
@@ -69,6 +70,19 @@ func setSetting(c *gin.Context) {
 			resp.Error(c, http.StatusBadRequest, err.Error())
 			return
 		}
+		task.Update(string(setting.Key), time.Duration(hours)*time.Hour)
+	case model.SettingKeySyncLLMInterval:
+		hours, err := strconv.Atoi(setting.Value)
+		if err != nil {
+			resp.Error(c, http.StatusBadRequest, err.Error())
+			return
+		}
+		// 启动时间隔为 0 的任务未注册, 改为正数时由 Register 补注册; 已注册的交给 Update 调整或移除。
+		task.Register(string(setting.Key), time.Duration(hours)*time.Hour, false, func() {
+			if err := task.SyncModelsTask(); err != nil {
+				log.Warnf("failed to sync models: %v", err)
+			}
+		})
 		task.Update(string(setting.Key), time.Duration(hours)*time.Hour)
 	}
 	resp.Success(c, setting)

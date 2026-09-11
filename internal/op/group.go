@@ -54,7 +54,7 @@ func GroupListModel() []string {
 }
 
 // GroupGetByName 返回客户端模型名称对应的分组配置, 供转发选路使用。
-// 渠道或凭据被禁用及授权两侧缺失的成员不参与选路, 重新可用后会在下一轮读取时自动恢复。
+// 渠道, 模型或凭据被禁用及授权两侧缺失的成员不参与选路, 重新可用后会在下一轮读取时自动恢复。
 func GroupGetByName(name string) (model.Group, error) {
 	groupID, ok := groupNameIndex.Get(name)
 	if !ok {
@@ -265,7 +265,7 @@ func sortGroupItems(items []model.GroupItem) {
 }
 
 // groupSnapshot 为成员补齐授权两侧的名称, 所属渠道与可用性。
-// 可用性在此一次定稿: 渠道与凭据均启用且模型, 凭据均存在时可转发, 否则仍列出该成员但标记不可用,
+// 可用性在此一次定稿: 渠道, 模型与凭据均启用且模型, 凭据均存在时可转发, 否则仍列出该成员但标记不可用,
 // 由此界面无需再按渠道列表回查, 也不会出现前后端各判一套的分歧。
 func groupSnapshot(group model.Group) model.Group {
 	// 成员恒为数组: 读取侧承诺该字段不为 null, 空分组也要给出空数组。
@@ -289,7 +289,7 @@ func groupSnapshot(group model.Group) model.Group {
 			continue
 		}
 		group.Items[i].ChannelName = channel.Name
-		group.Items[i].Available = channel.Enabled && channelKey.Enabled
+		group.Items[i].Available = channel.Enabled && channelModel.Enabled && channelKey.Enabled
 	}
 	return group
 }

@@ -25,7 +25,7 @@ export function FormKeys({ state, setState }: {
 
     const renameGrants = (from: string, to: string) => {
         const grants = new Map(state.grants);
-        for (const modelName of state.models) {
+        for (const { name: modelName } of state.models) {
             const old = grantKey(modelName, from);
             const grant = grants.get(old);
             if (grant === undefined) continue;
@@ -50,12 +50,12 @@ export function FormKeys({ state, setState }: {
     const remove = (index: number) => {
         const removed = state.keys[index].name;
         const grants = new Map(state.grants);
-        for (const modelName of state.models) grants.delete(grantKey(modelName, removed));
+        for (const { name: modelName } of state.models) grants.delete(grantKey(modelName, removed));
         setState({ ...state, keys: state.keys.filter((_, i) => i !== index), grants });
     };
 
     const grantCount = (keyName: string) =>
-        state.models.filter((m) => (state.grants.get(grantKey(m, keyName)) ?? 0) !== 0).length;
+        state.models.filter((m) => (state.grants.get(grantKey(m.name, keyName)) ?? 0) !== 0).length;
 
     const add = () => {
         // 名称在渠道内唯一, 递增取一个未占用的默认名。

@@ -124,6 +124,7 @@ export function ChannelStats({ channel, onEdit }: {
             return {
                 id: channelModel.model_id,
                 name: channelModel.model_name,
+                enabled: channelModel.enabled,
                 weight: modelSort === 'cost'
                     ? formatted.total_cost.raw
                     : modelSort === 'tokens' ? formatted.total_token.raw : formatted.request_count.raw,
@@ -324,7 +325,7 @@ export function ChannelStats({ channel, onEdit }: {
                             {modelStats.slice(0, 5).map((model) => (
                                 <li
                                     key={model.id}
-                                    className="grid gap-2 rounded-2xl border bg-card p-3 @md/stats:grid-cols-[minmax(0,1fr)_auto] @md/stats:items-center @md/stats:gap-4"
+                                    className={`grid gap-2 rounded-2xl border bg-card p-3 @md/stats:grid-cols-[minmax(0,1fr)_auto] @md/stats:items-center @md/stats:gap-4 ${model.enabled ? '' : 'opacity-45'}`}
                                 >
                                     <div className="min-w-0 space-y-1.5">
                                         <span className="block truncate text-sm font-medium text-card-foreground">{model.name}</span>

@@ -30,11 +30,23 @@ export type ChannelKey = {
 // ChannelGrant 是渠道内的一条上游授权：指定模型使用指定凭据时支持的协议集合，也是转发的最小单位。
 // 两侧按名称引用，读写同构：名称在渠道内唯一，新增的模型与凭据在后端同一事务内才分配主键，
 // 故提交侧只能按名称引用，读侧也随之给名称，页面无需在主键与名称之间翻译。
-// 授权本身没有启用状态: 不再授权即删掉该组合, 临时收回则停用凭据或摘掉协议位。
+// 授权本身没有启用状态: 不再授权即删掉该组合, 临时收回则停用模型, 停用凭据或摘掉协议位。
 export type ChannelGrant = {
     model_name: string;
     key_name: string;
     protocols: number; // Protocol 位掩码。
+};
+
+// ChannelModelSource 是渠道模型的来源：自动拉取得到的模型启停随上游列表变化，人工添加或人工接管的不受影响。
+// 在表单里开关或用探测添入的模型都按 manual 提交，由此用户的取舍不会被自动拉取改写。
+export type ChannelModelSource = 'manual' | 'auto';
+
+// ChannelModel 是渠道提供的单个上游模型；名称在渠道内唯一，读写都按它引用。
+// enabled 为假表示上游不再提供该模型，由自动拉取禁用：授权与分组成员原样保留，恢复后自动重新启用。
+export type ChannelModel = {
+    name: string;
+    source: ChannelModelSource;
+    enabled: boolean;
 };
 
 // ChannelGrantCandidate 是分组页可选取的一条授权，字段与 GroupItem 的展示字段一一对应。
@@ -66,19 +78,21 @@ export type ChannelDetail = {
     openai_response_path: string;
     anthropic_message_path: string;
     keys: ChannelKey[];
-    models: string[]; // 上游模型名称；模型除名称外没有界面用得上的字段。
+    models: ChannelModel[]; // 上游模型及其启停状态；模型除名称外没有界面用得上的字段。
     grants: ChannelGrant[];
     proxy: boolean;
     custom_header: CustomHeader[];
     param_override: string;
     channel_proxy: string;
     match_regex: string;
+    auto_sync: boolean;
 };
 
-// ChannelModelStats 是单个渠道模型的累计统计，自带名称。
+// ChannelModelStats 是单个渠道模型的累计统计，自带名称与启停状态。
 export type ChannelModelStats = StatsMetrics & {
     model_id: number;
     model_name: string;
+    enabled: boolean;
 };
 
 // ChannelStats 是单个渠道及其模型的累计统计，自带名称与启停状态。
@@ -95,6 +109,7 @@ export type ChannelStats = StatsMetrics & {
 export type ChannelModelStatsFormatted = {
     model_id: number;
     model_name: string;
+    enabled: boolean;
     formatted: StatsMetricsFormatted;
 };
 
@@ -149,6 +164,7 @@ const channelStatsFormattedQueryOptions = queryOptions({
         models: item.models.map((channelModel) => ({
             model_id: channelModel.model_id,
             model_name: channelModel.model_name,
+            enabled: channelModel.enabled,
             formatted: formatStatsMetrics(channelModel),
         })),
         formatted: formatStatsMetrics(item),
@@ -295,5 +311,47 @@ export function useFetchModel() {
     return useMutation({
         mutationFn: (data: FetchModelRequest) =>
             apiRequest<FetchModel[]>('/api/v1/channel/fetch-model', { method: 'POST', body: data }),
+    });
+}
+
+/**
+ * 手动触发一次自动拉取 Hook；与定时任务共用同一套同步逻辑，正在运行时后端拒绝重复触发。
+ * 模型随同步增删启停，渠道统计、分组与价格都要跟着刷新。
+ *
+ * @example
+ * const syncChannel = useSyncChannel();
+ *
+ * syncChannel.mutate();
+ */
+export function useSyncChannel() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: () => apiRequest<null>('/api/v1/channel/sync', { method: 'POST' }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['channels'] });
+            queryClient.invalidateQueries({ queryKey: modelListQueryOptions.queryKey });
+            queryClient.invalidateQueries({ queryKey: groupListQueryOptions.queryKey });
+        },
+    });
+}
+
+/**
+ * 获取最近一次自动拉取的完成时间 Hook
+ *
+ * @example
+ * const lastSyncTime = useLastSyncTime();
+ *
+ * if (lastSyncTime.data) {
+ *   console.log('最近同步时间:', new Date(lastSyncTime.data).toLocaleString());
+ * }
+ */
+export function useLastSyncTime(enabled = true) {
+    return useQuery({
+        queryKey: ['channels', 'last-sync-time'],
+        queryFn: () => apiRequest<string>('/api/v1/channel/last-sync-time'),
+        enabled,
+        refetchInterval: 30000,
+        refetchOnMount: 'always',
     });
 }

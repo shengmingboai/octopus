@@ -163,6 +163,22 @@
             "placeholder": "請輸入過濾表達式",
             "hint": "渠道獲取模型時與渠道自身的過濾表達式同時生效（AND），留空不過濾"
         },
+        "llmSync": {
+            "title": "模型同步",
+            "syncInterval": {
+                "label": "同步週期（小時）",
+                "placeholder": "請輸入週期（小時）"
+            },
+            "manualSync": {
+                "label": "立即同步",
+                "button": "同步",
+                "syncing": "同步中..."
+            },
+            "lastSync": "上次同步",
+            "neverSynced": "從未同步",
+            "syncSuccess": "模型同步已開始",
+            "syncFailed": "同步失敗"
+        },
         "saved": "已儲存",
         "backup": {
             "title": "備份 / 復原",
@@ -456,6 +472,7 @@
             "apiKey": "API Key",
             "enabled": "啟用",
             "proxy": "使用代理",
+            "autoSync": "自動拉取",
             "keys": "憑證",
             "keyAdd": "新增憑證",
             "keyName": "名稱",

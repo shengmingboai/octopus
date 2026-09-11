@@ -67,6 +67,7 @@ export const GroupCard = memo(function GroupCard({ group, now }: { group: Group;
             channel_grant_id: item.channel_grant_id,
             name: item.model_name,
             enabled: item.available,
+            available: item.available,
             channel_id: item.channel_id,
             channel_name: item.channel_name,
             key_name: item.key_name,

@@ -20,6 +20,7 @@ export interface SelectedMember {
     channel_grant_id: number;
     name: string;
     enabled: boolean;
+    available: boolean;
     channel_id: number;
     channel_name: string;
     key_name: string;
@@ -65,7 +66,6 @@ function MemberItem({
     layoutScope?: string;
     dnd: MemberItemDnd;
 }) {
-    const t = useTranslations('group');
     const { Icon, className: iconClassName } = getModelIcon(member.name);
     const [confirmDelete, setConfirmDelete] = useState(false);
     const isDisabled = member.enabled === false;

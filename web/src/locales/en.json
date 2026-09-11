@@ -163,6 +163,22 @@
             "placeholder": "Enter filter regex",
             "hint": "Applied along with the channel's own filter when fetching models (AND); empty means no filter"
         },
+        "llmSync": {
+            "title": "Model Sync",
+            "syncInterval": {
+                "label": "Sync interval (hours)",
+                "placeholder": "Enter interval (hours)"
+            },
+            "manualSync": {
+                "label": "Sync now",
+                "button": "Sync",
+                "syncing": "Syncing..."
+            },
+            "lastSync": "Last sync",
+            "neverSynced": "Never",
+            "syncSuccess": "Model sync started",
+            "syncFailed": "Sync failed"
+        },
         "saved": "Saved",
         "backup": {
             "title": "Backup / Restore",
@@ -456,6 +472,7 @@
             "apiKey": "API Key",
             "enabled": "Enabled",
             "proxy": "Use proxy",
+            "autoSync": "Auto fetch",
             "keys": "Credentials",
             "keyAdd": "Add credential",
             "keyName": "Name",

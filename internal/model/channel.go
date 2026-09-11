@@ -38,6 +38,7 @@ type ChannelConfig struct {
 	CustomHeader             []CustomHeader `json:"custom_header" gorm:"serializer:json"`                                                               // 追加到上游请求的 Header。
 	ParamOverride            string         `json:"param_override"`                                                                                     // 请求参数覆盖配置; 留空表示不覆盖。
 	MatchRegex               string         `json:"match_regex"`                                                                                        // 拉取模型列表时的过滤表达式; 留空表示不过滤。
+	AutoSync                 bool           `json:"auto_sync" gorm:"default:false"`                                                                     // 是否随自动拉取任务与上游同步模型列表。
 }
 
 // 单个上游渠道的共享配置; 路径按协议分别配置, 凭据由 ChannelKey 提供。
@@ -65,12 +66,22 @@ type ChannelKey struct {
 	StatsMetrics         // 该凭据自身的累计统计。
 }
 
+// 渠道模型的来源。
+type ChannelModelSource string
+
+const (
+	ChannelModelSourceManual ChannelModelSource = "manual" // 人工添加或人工接管: 自动拉取不增删改它。
+	ChannelModelSourceAuto   ChannelModelSource = "auto"   // 自动拉取得到: 上游缺失时禁用, 恢复时重新启用。
+)
+
 // 渠道提供的单个上游模型。
 type ChannelModel struct {
-	ID           int    `json:"id" gorm:"primaryKey"`                                      // 渠道模型主键。
-	ChannelID    int    `json:"channel_id" gorm:"not null;index:idx_channel_model,unique"` // 所属渠道 ID。
-	Name         string `json:"name" gorm:"not null;index:idx_channel_model,unique"`       // 上游模型名称。
-	StatsMetrics        // 该模型自身的累计统计。
+	ID                 int                `json:"id" gorm:"primaryKey"`                                      // 渠道模型主键。
+	ChannelID          int                `json:"channel_id" gorm:"not null;index:idx_channel_model,unique"` // 所属渠道 ID。
+	Name               string             `json:"name" gorm:"not null;index:idx_channel_model,unique"`       // 上游模型名称。
+	Source             ChannelModelSource `json:"source" gorm:"not null;default:manual"`                     // 模型来源; auto 的启停随上游列表变化, manual 不受自动拉取影响。
+	Enabled            bool               `json:"enabled" gorm:"default:true"`                               // 上游仍提供该模型时为真; 自动拉取发现缺失时禁用, 恢复后重新启用, 其间的授权与分组成员原样保留。
+	StatsMetrics                                                                                             // 该模型自身的累计统计。
 }
 
 // 渠道内的一条上游授权: 指定模型使用指定凭据时支持的协议集合, 也是转发的最小单位。
@@ -92,8 +103,17 @@ type ChannelDetail struct {
 	ID            int                  `json:"id"`     // 渠道主键; 创建时提交 0, 由数据库分配。
 	ChannelConfig                      // 渠道自身的可编辑配置。
 	Keys          []ChannelKeyConfig   `json:"keys"`   // 渠道下的上游凭据。
-	Models        []string             `json:"models"` // 渠道提供的上游模型名称。
+	Models        []ChannelModelConfig `json:"models"` // 渠道提供的上游模型及其启停状态。
 	Grants        []ChannelGrantConfig `json:"grants"` // 渠道下的授权。
+}
+
+// 渠道模型的可编辑形状; 名称在渠道内唯一, 整体替换时以它为匹配依据。
+// 启用状态与凭据同理随提交给出: 关闭即人工停用该模型; 一并提交来源,
+// 开关过或探测添入的模型按 manual 提交, 由此不再被自动拉取增删改。
+type ChannelModelConfig struct {
+	Name    string             `json:"name"`    // 上游模型名称。
+	Source  ChannelModelSource `json:"source"`  // 模型来源; 留空按 manual 处理。
+	Enabled bool               `json:"enabled"` // 是否可用, 禁用后不参与选路但保留授权与分组成员。
 }
 
 // 渠道授权的可编辑形状, 两侧按名称引用。
@@ -121,6 +141,7 @@ type ChannelStats struct {
 type ChannelModelStats struct {
 	ModelID      int    `json:"model_id"`   // 渠道模型主键。
 	ModelName    string `json:"model_name"` // 上游模型名称。
+	Enabled      bool   `json:"enabled"`    // 是否可用; 自动拉取发现上游缺失时会禁用, 界面按此标记。
 	StatsMetrics        // 该模型自身的累计统计。
 }
 

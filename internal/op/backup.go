@@ -86,6 +86,14 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 		}
 		dump.Channels[i].ChannelConfig = config
 	}
+	// 老版本备份的渠道模型不带 source 字段, 零值落库会走列默认 manual, 自动拉取对迁移用户从此失效。
+	// 备份导入发生在迁移全部完成之后, 迁移 13 无从再翻这批行, 故在此与迁移 13 对齐同一语义:
+	// 本功能上线前的存量模型视为自动来源, 交由同步任务按上游列表管理。
+	for i := range dump.ChannelModels {
+		if dump.ChannelModels[i].Source == "" {
+			dump.ChannelModels[i].Source = model.ChannelModelSourceAuto
+		}
+	}
 
 	conn := db.GetDB().WithContext(ctx)
 	res := &model.DBImportResult{RowsAffected: map[string]int64{}}

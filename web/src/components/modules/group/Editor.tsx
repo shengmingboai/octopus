@@ -180,7 +180,7 @@ function ModelPickerSection({
                                                 0
                                             );
                                             return (
-                                                <div key={model.name} className="rounded-lg border border-border/50 bg-background">
+                                                <div key={model.name} className={`rounded-lg border border-border/50 bg-background ${model.grants.some((m) => m.available) ? '' : 'opacity-60 grayscale'}`}>
                                                     {/* 模型行只作分组标题, 不可点选: 可选的是它下面的凭据, 一份凭据一条授权。 */}
                                                     <div className="flex items-center justify-between gap-2 px-2.5 py-2">
                                                         <span className="flex items-center gap-2 min-w-0">
@@ -203,7 +203,8 @@ function ModelPickerSection({
                                                                     disabled={isSelected}
                                                                     className={cn(
                                                                         'flex w-full items-center justify-between gap-2 px-2.5 py-1.5 pl-8 text-left transition-colors',
-                                                                        isSelected ? 'opacity-60 cursor-not-allowed' : 'hover:bg-muted'
+                                                                        isSelected ? 'opacity-60 cursor-not-allowed' : 'hover:bg-muted',
+                                                                        !m.available && 'opacity-60 grayscale'
                                                                     )}
                                                                 >
                                                                     <span className="flex min-w-0 items-center gap-2">
@@ -325,6 +326,7 @@ export function GroupEditor({
         channel_grant_id: grant.id,
         name: grant.model_name,
         enabled: grant.available,
+        available: grant.available,
         channel_id: grant.channel_id,
         channel_name: grant.channel_name,
         key_name: grant.key_name,
