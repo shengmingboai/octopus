@@ -196,6 +196,7 @@ function ChannelFormFields({ channel, onBack }: { channel?: ChannelDetail; onBac
                                     ['enabled', t('enabled')],
                                     ['proxy', t('proxy')],
                                     ['auto_sync', t('autoSync')],
+                                    ['auto_group', t('autoGroup')],
                                 ] as const).map(([field, label]) => (
                                     <label key={field} className="flex items-center gap-2 cursor-pointer">
                                         <Switch

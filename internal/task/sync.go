@@ -55,7 +55,7 @@ func SyncModelsTask() error {
 		if !detail.Enabled || !detail.AutoSync {
 			continue
 		}
-		addedModels, err := syncChannelModelList(&detail, ctx)
+		addedModels, regroup, err := syncChannelModelList(&detail, ctx)
 		if err != nil {
 			log.Warnf("failed to sync models for channel %s: %v", detail.Name, err)
 			if syncErr == nil {
@@ -63,11 +63,16 @@ func SyncModelsTask() error {
 			}
 			continue
 		}
-		if len(addedModels) == 0 {
-			continue
+		if len(addedModels) > 0 {
+			if err := helper.LLMPricesAdd(addedModels, ctx); err != nil {
+				log.Warnf("failed to add model prices for channel %s: %v", detail.Name, err)
+			}
 		}
-		if err := helper.LLMPricesAdd(addedModels, ctx); err != nil {
-			log.Warnf("failed to add model prices for channel %s: %v", detail.Name, err)
+		// 自动分组只在本轮新增或恢复模型时触发: 新增的模型首次出现, 恢复的模型重新启用后也要回到分组。
+		if regroup {
+			if err := op.AutoGroupChannel(&detail, ctx); err != nil {
+				log.Warnf("failed to auto group channel %s: %v", detail.Name, err)
+			}
 		}
 	}
 	if err := op.LLMCleanupGhosts(ctx); err != nil {
@@ -79,10 +84,10 @@ func SyncModelsTask() error {
 	return syncErr
 }
 
-// syncChannelModelList 同步单个渠道的模型列表, 返回本次新增的模型; 列表没有任何变化时不写库。
+// syncChannelModelList 同步单个渠道的模型列表, 返回本次新增的模型与是否需要重新分组; 列表没有任何变化时返回空且不写库。
 // 每条启用的凭据都拉一遍: 各凭据在上游被授权的模型不同, 新模型要在每条拉到它的凭据上都建授权。
 // 拉取失败的凭据与拉通但为空的凭据不参与基准, 避免把其他凭据仍提供的模型误判为缺失而禁用。
-func syncChannelModelList(detail *model.ChannelDetail, ctx context.Context) ([]model.ChannelModelConfig, error) {
+func syncChannelModelList(detail *model.ChannelDetail, ctx context.Context) ([]model.ChannelModelConfig, bool, error) {
 	var fetched []struct {
 		keyName string
 		models  []model.ChannelFetchModel
@@ -109,12 +114,12 @@ func syncChannelModelList(detail *model.ChannelDetail, ctx context.Context) ([]m
 		}{keyName: channelKey.Name, models: models})
 	}
 	if !probeOK {
-		return nil, fmt.Errorf("failed to fetch models for channel %s", detail.Name)
+		return nil, false, fmt.Errorf("failed to fetch models for channel %s", detail.Name)
 	}
 	// 全部凭据都拉通但一个模型都没返回时不动本地列表: 瞬时异常返回空列表会把整条渠道的模型全部禁用。
 	if len(fetched) == 0 {
 		log.Warnf("channel %s fetched 0 models, skipped", detail.Name)
-		return nil, nil
+		return nil, false, nil
 	}
 
 	// 模型在任一凭据的非空结果中出现即视为上游仍提供; 协议位按凭据分别记录, 供新增模型逐凭据建授权。
@@ -186,7 +191,7 @@ func syncChannelModelList(detail *model.ChannelDetail, ctx context.Context) ([]m
 		}
 	}
 	if addedCount == 0 && disabledCount == 0 && restoredCount == 0 {
-		return nil, nil
+		return nil, false, nil
 	}
 	// 新增模型并入提交集合: 授权按名称引用两侧, 两侧必须先在本事务内落库。
 	models = append(models, addedModels...)
@@ -197,12 +202,13 @@ func syncChannelModelList(detail *model.ChannelDetail, ctx context.Context) ([]m
 		Models:        models,
 		Grants:        grants,
 	}, ctx); err != nil {
-		return nil, fmt.Errorf("failed to update channel %d models: %w", detail.ID, err)
+		return nil, false, fmt.Errorf("failed to update channel %d models: %w", detail.ID, err)
 	}
 	if addedCount > 0 {
 		log.Infof("channel %s: %d model(s) added", detail.Name, addedCount)
 	}
-	return addedModels, nil
+	// 新增与恢复都需要重新分组: 新增的模型首次进入分组, 恢复的模型此前被禁用、重新启用后回到分组。
+	return addedModels, addedCount > 0 || restoredCount > 0, nil
 }
 
 // GetLastSyncModelsTime 返回最近一次模型同步任务结束时间。

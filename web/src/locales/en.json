@@ -473,6 +473,7 @@
             "enabled": "Enabled",
             "proxy": "Use proxy",
             "autoSync": "Auto fetch",
+            "autoGroup": "Auto group",
             "keys": "Credentials",
             "keyAdd": "Add credential",
             "keyName": "Name",

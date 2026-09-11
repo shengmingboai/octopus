@@ -106,6 +106,10 @@ func createChannel(c *gin.Context) {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
+	if err := op.AutoGroupChannel(channel, c.Request.Context()); err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
 	resp.Success(c, channel)
 }
 
@@ -129,6 +133,10 @@ func updateChannel(c *gin.Context) {
 		return
 	}
 	if err := op.LLMCleanupGhosts(c.Request.Context()); err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := op.AutoGroupChannel(channel, c.Request.Context()); err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}

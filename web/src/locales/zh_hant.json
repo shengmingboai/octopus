@@ -473,6 +473,7 @@
             "enabled": "啟用",
             "proxy": "使用代理",
             "autoSync": "自動拉取",
+            "autoGroup": "自動分組",
             "keys": "憑證",
             "keyAdd": "新增憑證",
             "keyName": "名稱",
