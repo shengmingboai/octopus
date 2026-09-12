@@ -6,14 +6,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gin-contrib/sse"
+	"github.com/gin-gonic/gin"
 	"github.com/shengmingboai/octopus/internal/model"
 	"github.com/shengmingboai/octopus/internal/op"
 	"github.com/shengmingboai/octopus/internal/relay"
 	"github.com/shengmingboai/octopus/internal/server/middleware"
 	"github.com/shengmingboai/octopus/internal/server/resp"
 	"github.com/shengmingboai/octopus/internal/server/router"
-	"github.com/gin-contrib/sse"
-	"github.com/gin-gonic/gin"
 )
 
 func init() {
@@ -209,7 +209,7 @@ func updateGroup(c *gin.Context) {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
-	// 选择模式变化后进程内路由不再适用, 丢弃它以免旧的冷却与亲和在切回故障转移时复活。
+	// 选择模式变化后进程内路由不再适用, 丢弃它以免旧的熔断与亲和在切回故障转移时复活。
 	if oldGroup.Mode != group.Mode {
 		relay.ResetRouteState(id)
 	}

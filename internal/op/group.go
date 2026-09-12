@@ -160,6 +160,7 @@ func GroupUpdate(id int, req *model.GroupUpdateRequest, ctx context.Context) (*m
 	}
 
 	sortGroupItems(group.Items)
+	model.NormalizeGroupRelayConfig(&group.RelayConfig)
 	groupCache.Set(group.ID, group)
 	groupNameIndex.Set(group.Name, group.ID)
 	if oldName != group.Name {
@@ -171,7 +172,7 @@ func GroupUpdate(id int, req *model.GroupUpdateRequest, ctx context.Context) (*m
 
 // syncGroupItems 按提交的成员集合新增, 重排与删除分组成员。
 // 成员在分组内按渠道授权唯一, 该授权作为匹配依据, 由此已有成员保留其主键:
-// 主键被分组的当前成员和 Relay 的路由状态引用, 换主键会让人工选择与冷却记录失效。
+// 主键被分组的当前成员和 Relay 的路由状态引用, 换主键会让人工选择与熔断记录失效。
 // 优先级一律按提交顺序重写, 前端只需提交当前排列, 无需自行算出哪些成员的顺序发生了变化。
 func syncGroupItems(tx *gorm.DB, groupID int, requested []model.GroupItemInput) error {
 	var existing []model.GroupItem
@@ -248,6 +249,8 @@ func groupRefreshCache(ctx context.Context) error {
 	groupNameIndex.Clear()
 	for _, group := range groups {
 		sortGroupItems(group.Items)
+		// 库内旧行可能缺少后加的配置字段, 入缓存前补齐, 使 Relay 与界面读到的配置一致。
+		model.NormalizeGroupRelayConfig(&group.RelayConfig)
 		groupCache.Set(group.ID, group)
 		groupNameIndex.Set(group.Name, group.ID)
 	}

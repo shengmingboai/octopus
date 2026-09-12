@@ -9,7 +9,7 @@ import (
 )
 
 // RouteState 是一个分组的进程内路由状态; 跨该分组的全部请求共享。
-// 同时作为路由流的消息形状与分组读取响应中的 runtime 字段: 冷却, 探测与亲和都是本包路由算法的概念,
+// 同时作为路由流的消息形状与分组读取响应中的 runtime 字段: 熔断, 探测与亲和都是本包路由算法的概念,
 // 故状态形状由本包定义, 分组的持久化配置不含它; 内部标志未导出, 不会随消息出到 JSON。
 // 两种模式共用 CurrentItemID: 手动模式下即人工指定的成员, 故障转移模式下由路由决定,
 // 前端由此只读这一个字段即可知道当前承载请求的成员, 无需再按模式分支。
@@ -18,9 +18,10 @@ type RouteState struct {
 	CurrentItemID int           `json:"current_item_id"` // 当前承载请求的成员 ID, 0 表示尚未建立路由或未人工指定。
 	ProbeItemID   int           `json:"probe_item_id"`   // 当前占用恢复探测的成员 ID, 同一分组同时只允许一个成员被探测; 手动模式恒为 0。
 	AffinityUntil int64         `json:"affinity_until"`  // 当前路由的亲和截止 Unix 毫秒时间, 0 表示无亲和; 手动模式恒为 0。
-	Cooldowns     map[int]int64 `json:"cooldowns"`       // 失败成员 ID 对应的冷却截止 Unix 毫秒时间, 已到期的条目由前端按当前时间忽略。
+	TrippedUntil  map[int]int64 `json:"tripped_until"`   // 熔断中的成员 ID 对应的熔断截止 Unix 毫秒时间, 已到期的条目由前端按当前时间忽略。
 
-	affinityArmed bool // 当前路由下一次成功后是否开始亲和, 仅故障切换后为真。
+	affinityArmed bool        // 当前路由下一次成功后是否开始亲和, 仅故障切换后为真。
+	tripCounts    map[int]int // 成员 ID 对应的连续熔断触发次数, 用于指数退避; 探测成功即清零, 键集合是 TrippedUntil 的子集。
 }
 
 const routeStreamBuffer = 16 // 单个路由流连接的非阻塞消息缓冲容量。
@@ -32,13 +33,13 @@ var (
 )
 
 // RouteStateOf 返回分组当前的实时路由状态, 供读取接口随分组一并返回。
-// 手动模式没有进程内路由: 当前成员即人工指定的成员, 冷却与亲和均不适用, 故直接由分组配置得出。
+// 手动模式没有进程内路由: 当前成员即人工指定的成员, 熔断与亲和均不适用, 故直接由分组配置得出。
 func RouteStateOf(group model.Group) RouteState {
 	if group.Mode == model.GroupModeManual {
 		return RouteState{
 			GroupID:       group.ID,
 			CurrentItemID: group.ActiveItemID,
-			Cooldowns:     map[int]int64{},
+			TrippedUntil:  map[int]int64{},
 		}
 	}
 
@@ -47,15 +48,15 @@ func RouteStateOf(group model.Group) RouteState {
 
 	route := routes[group.ID]
 	if route == nil {
-		return RouteState{GroupID: group.ID, Cooldowns: map[int]int64{}}
+		return RouteState{GroupID: group.ID, TrippedUntil: map[int]int64{}}
 	}
 	state := *route
-	state.Cooldowns = maps.Clone(route.Cooldowns)
+	state.TrippedUntil = maps.Clone(route.TrippedUntil)
 	return state
 }
 
 // ResetRouteState 丢弃分组的进程内路由状态, 用于分组切换选择模式或被删除。
-// 不丢弃的话冷却与亲和会在 failover 切到 manual 再切回来之后复活并继续影响选路, 分组删除后其状态也会永久残留。
+// 不丢弃的话熔断与亲和会在 failover 切到 manual 再切回来之后复活并继续影响选路, 分组删除后其状态也会永久残留。
 func ResetRouteState(groupID int) {
 	routeMu.Lock()
 	defer routeMu.Unlock()
@@ -64,7 +65,7 @@ func ResetRouteState(groupID int) {
 }
 
 // pickGroupItem 按分组模式选择本轮目标成员, 没有可用成员时返回零值; group.Items 已按 Priority 升序排列。
-// 渠道是否可用不在此判断: 渠道禁用或缺少密钥由调用方发现并作为一轮失败上报, 该成员随即进入冷却而在后续轮次被跳过。
+// 渠道是否可用不在此判断: 渠道禁用或缺少密钥由调用方发现并作为一轮失败上报, 该成员随即进入熔断而在后续轮次被跳过。
 func pickGroupItem(group model.Group) model.GroupItem {
 	if group.Mode == model.GroupModeManual {
 		for _, item := range group.Items {
@@ -94,12 +95,12 @@ func pickGroupItem(group model.Group) model.GroupItem {
 		if item.ID == route.CurrentItemID {
 			break
 		}
-		deadline, cooling := route.Cooldowns[item.ID]
-		if cooling && deadline > now {
+		deadline, tripped := route.TrippedUntil[item.ID]
+		if tripped && deadline > now {
 			continue
 		}
-		// 冷却已到期的成员只放行一个探测请求, 避免全部请求同时涌向尚未恢复的成员。
-		if cooling {
+		// 熔断已到期的成员只放行一个探测请求, 避免全部请求同时涌向尚未恢复的成员。
+		if tripped {
 			if route.ProbeItemID != 0 {
 				continue
 			}
@@ -117,7 +118,7 @@ func pickGroupItem(group model.Group) model.GroupItem {
 	return model.GroupItem{}
 }
 
-// recordRouteSuccess 上报一轮成功: 结束该成员的冷却与探测占用, 并在故障切换后按配置开始亲和。
+// recordRouteSuccess 上报一轮成功: 结束该成员的熔断与探测占用, 并在故障切换后按配置开始亲和。
 func recordRouteSuccess(group model.Group, itemID int) {
 	if group.Mode == model.GroupModeManual {
 		return
@@ -133,10 +134,11 @@ func recordRouteSuccess(group model.Group, itemID int) {
 	now := time.Now().UnixMilli()
 	changed := false
 
-	// 探测成功说明该成员已恢复, 解除冷却; 若当前路由不在亲和期内则立即切回该成员。
+	// 探测成功说明该成员已恢复, 解除熔断并让下次熔断回到基础时长; 若当前路由不在亲和期内则立即切回该成员。
 	if route.ProbeItemID == itemID {
 		route.ProbeItemID = 0
-		delete(route.Cooldowns, itemID)
+		delete(route.TrippedUntil, itemID)
+		delete(route.tripCounts, itemID)
 		if route.CurrentItemID == 0 || route.AffinityUntil <= now {
 			route.CurrentItemID = itemID
 			route.AffinityUntil = 0
@@ -156,7 +158,7 @@ func recordRouteSuccess(group model.Group, itemID int) {
 	}
 }
 
-// recordRouteFailure 上报一轮失败: 达到配置的总尝试次数后将该成员打入冷却并让出当前路由, 返回是否已冷却。
+// recordRouteFailure 上报一轮失败: 达到配置的总尝试次数后将该成员打入熔断并让出当前路由, 返回是否已熔断。
 // failures 为该成员在本请求内包含首次请求的连续失败次数, 由调用方累计。
 func recordRouteFailure(group model.Group, itemID, failures int) bool {
 	if group.Mode == model.GroupModeManual {
@@ -170,13 +172,14 @@ func recordRouteFailure(group model.Group, itemID, failures int) bool {
 	if route == nil {
 		return false
 	}
-	// 探测请求只有一次机会, 常规成员达到配置的总尝试次数后进入冷却。
+	// 探测请求只有一次机会, 常规成员达到配置的总尝试次数后进入熔断。
 	if route.ProbeItemID != itemID && failures < group.RelayConfig.MemberMaxAttempts {
 		return false
 	}
 
-	now := time.Now().UnixMilli()
-	route.Cooldowns[itemID] = now + int64(group.RelayConfig.MemberCooldownSeconds)*1000
+	// 连续触发次数按指数退避决定本次熔断时长, 直到探测成功才回到基础熔断时间。
+	route.tripCounts[itemID]++
+	route.TrippedUntil[itemID] = time.Now().UnixMilli() + tripDurationMillis(group.RelayConfig, route.tripCounts[itemID])
 	if route.ProbeItemID == itemID {
 		route.ProbeItemID = 0
 	}
@@ -188,6 +191,15 @@ func recordRouteFailure(group model.Group, itemID, failures int) bool {
 	}
 	publishRouteLocked(route)
 	return true
+}
+
+// tripDurationMillis 计算成员第 trips 次连续触发熔断的毫秒时长, 指数退避: 基础熔断时间 * 2^(trips-1), 以最大熔断时间封顶。
+func tripDurationMillis(config model.GroupRelayConfig, trips int) int64 {
+	seconds := int64(config.MemberCircuitBreakSeconds)
+	if trips > 1 {
+		seconds <<= min(trips-1, 20) // 移位次数封顶以防溢出, 2^20 倍早已超过任何合理的上限。
+	}
+	return min(seconds, int64(config.MemberMaxCircuitBreakSeconds)) * 1000
 }
 
 // releaseRouteProbe 归还未产生成败结论的探测占用, 用于请求被人工中止或客户端断开。
@@ -205,16 +217,17 @@ func releaseRouteProbe(group model.Group, itemID int) {
 func groupRouteLocked(group model.Group) *RouteState {
 	route := routes[group.ID]
 	if route == nil {
-		route = &RouteState{GroupID: group.ID, Cooldowns: make(map[int]int64)}
+		route = &RouteState{GroupID: group.ID, TrippedUntil: make(map[int]int64), tripCounts: make(map[int]int)}
 		routes[group.ID] = route
 	}
 	items := make(map[int]bool, len(group.Items))
 	for _, item := range group.Items {
 		items[item.ID] = true
 	}
-	for itemID := range route.Cooldowns {
+	for itemID := range route.TrippedUntil {
 		if !items[itemID] {
-			delete(route.Cooldowns, itemID)
+			delete(route.TrippedUntil, itemID)
+			delete(route.tripCounts, itemID)
 		}
 	}
 	if route.ProbeItemID != 0 && !items[route.ProbeItemID] {
@@ -238,10 +251,10 @@ func itemOf(group model.Group, itemID int) model.GroupItem {
 	return model.GroupItem{}
 }
 
-// publishRouteLocked 非阻塞发布路由状态, 连接拥塞时关闭它并交给客户端重连获取全量快照; 冷却表按值复制以免前端读到后续变更; 调用方必须持有锁。
+// publishRouteLocked 非阻塞发布路由状态, 连接拥塞时关闭它并交给客户端重连获取全量快照; 熔断表按值复制以免前端读到后续变更; 调用方必须持有锁。
 func publishRouteLocked(route *RouteState) {
 	message := *route
-	message.Cooldowns = maps.Clone(route.Cooldowns)
+	message.TrippedUntil = maps.Clone(route.TrippedUntil)
 	for stream := range routeStreams {
 		select {
 		case stream <- message:

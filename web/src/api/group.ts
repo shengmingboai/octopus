@@ -11,7 +11,8 @@ export type GroupMode = 'manual' | 'failover';
 export interface GroupRelayConfig {
     member_max_attempts: number;
     member_retry_interval_seconds: number;
-    member_cooldown_seconds: number;
+    member_circuit_break_seconds: number;
+    member_max_circuit_break_seconds: number;
     member_affinity_seconds: number;
 }
 
@@ -37,7 +38,7 @@ export interface GroupRuntime {
     current_item_id: number;
     probe_item_id: number;
     affinity_until: number;
-    cooldowns: Record<number, number>;
+    tripped_until: Record<number, number>;
 }
 
 // Group 是客户端模型名称对应的渠道分组。

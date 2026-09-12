@@ -82,8 +82,8 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 		failures := 0     // 该成员包含首次请求的连续失败次数。
 		var lastErr error // 分组内最后一个成员的失败原因, 一轮全部失败时随错误返回给客户端。
 
-		// memberFailed 记录当前成员一次不可用: 故障转移模式达到总尝试次数后将其打入冷却并立即换下一个成员,
-		// 手动模式没有冷却轮换, 唯一成员耗尽总尝试次数后本轮即告失败, 直接以失败终态结束请求。
+		// memberFailed 记录当前成员一次不可用: 故障转移模式达到总尝试次数后将其打入熔断并立即换下一个成员,
+		// 手动模式没有熔断轮换, 唯一成员耗尽总尝试次数后本轮即告失败, 直接以失败终态结束请求。
 		// 返回 false 表示请求已经结束, 外层循环应直接返回。
 		memberFailed := func(group model.Group, itemID int) bool {
 			if failedItemID == itemID {
@@ -116,7 +116,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				return
 			}
 
-			// 手动模式取人工指定的成员, 故障转移模式按优先级选择未禁用且不在冷却中的成员。
+			// 手动模式取人工指定的成员, 故障转移模式按优先级选择未禁用且不在熔断中的成员。
 			// 手动模式尚未指定成员时等待人工指定, 期间补齐成员或人工切换渠道即可让请求继续;
 			// 其余没有目标的情况——故障转移模式下成员已全部试到失败(或尚无可用成员), 手动模式下已指定的成员被禁用或删除——
 			// 一轮到此结束, 直接以失败结束请求, 等待既不会让它恢复也会把客户端无限挂起。
@@ -132,7 +132,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				return
 			}
 
-			// 成员指向的授权缺失, 凭据被停用或两侧已被删除, 该成员同样视作一次失败计入本轮, 耗尽总尝试次数后冷却跳过。
+			// 成员指向的授权缺失, 凭据被停用或两侧已被删除, 该成员同样视作一次失败计入本轮, 耗尽总尝试次数后熔断跳过。
 			// ChannelGrantGet 一次校验齐这几种情况, 取到的授权必然可直接转发, 无需再逐项检查。
 			grant, err := op.ChannelGrantGet(item.ChannelGrantID)
 			if err != nil {
@@ -215,7 +215,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				_ = op.ChannelModelStatsUpdate(channelModel.ID, metrics)
 				_ = op.ChannelKeyStatsUpdate(channelKey.ID, metrics)
 
-				// 成员失败计入本轮: 达到总尝试次数时故障转移模式进入冷却并立即重新选路, 否则等待后重试;
+				// 成员失败计入本轮: 达到总尝试次数时故障转移模式进入熔断并立即重新选路, 否则等待后重试;
 				// 手动模式耗尽总尝试次数后直接以失败结束请求。
 				lastErr = err
 				if !memberFailed(group, item.ID) {
@@ -226,7 +226,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			// 记录本轮已经取得可提交的上游响应。
 			request.finishRound("")
 			roundWaitTime := time.Since(roundStartedAt).Milliseconds() // 流式响应只统计等待首帧的时间。
-			// 上游成功后解除该成员的冷却与探测占用, 并按路由配置开始亲和。
+			// 上游成功后解除该成员的熔断与探测占用, 并按路由配置开始亲和。
 			recordRouteSuccess(group, item.ID)
 			// 同协议透传时原样返回上游响应头; 跨协议响应没有需要透传的响应头。
 			for key, values := range result.header {

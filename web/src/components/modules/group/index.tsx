@@ -78,8 +78,8 @@ export function Group() {
             getItemKey={(group) => group.id}
             renderItem={(group) => {
                 let deadline = group.runtime.affinity_until;
-                for (const cooldownUntil of Object.values(group.runtime.cooldowns)) {
-                    deadline = Math.max(deadline, cooldownUntil);
+                for (const trippedUntil of Object.values(group.runtime.tripped_until)) {
+                    deadline = Math.max(deadline, trippedUntil);
                 }
                 return <GroupCard group={group} now={deadline > runtimeNow ? runtimeNow : deadline} />;
             }}

@@ -332,7 +332,7 @@
         "card": {
             "empty": "暂无规则",
             "activate": "设为活动项",
-            "cooling": "冷却 {seconds}s",
+            "tripped": "熔断 {seconds}s",
             "affinity": "亲和 {seconds}s"
         },
         "detail": {
@@ -354,8 +354,10 @@
             "retryCountHint": "单个成员包含首次请求的总尝试次数",
             "retryInterval": "重试间隔（秒）",
             "retryIntervalHint": "同一成员相邻两次尝试的等待时间",
-            "cooldown": "冷却时间（秒）",
-            "cooldownHint": "成员重试耗尽后暂停使用的时间",
+            "circuitBreak": "基础熔断时间（秒）",
+            "circuitBreakHint": "成员连续失败达到总尝试次数后触发熔断，熔断时间按指数退避增长，探测成功后恢复",
+            "maxCircuitBreak": "最大熔断时间（秒）",
+            "maxCircuitBreakHint": "熔断时间指数退避增长的上限，不低于基础熔断时间",
             "affinity": "故障切换亲和时间（秒）",
             "affinityHint": "备用成员首次请求成功后继续使用该成员的时间",
             "items": "成员顺序",

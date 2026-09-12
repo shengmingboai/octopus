@@ -116,7 +116,8 @@ export const GroupCard = memo(function GroupCard({ group, now }: { group: Group;
         if (
             values.relay_config.member_max_attempts !== group.relay_config.member_max_attempts ||
             values.relay_config.member_retry_interval_seconds !== group.relay_config.member_retry_interval_seconds ||
-            values.relay_config.member_cooldown_seconds !== group.relay_config.member_cooldown_seconds ||
+            values.relay_config.member_circuit_break_seconds !== group.relay_config.member_circuit_break_seconds ||
+            values.relay_config.member_max_circuit_break_seconds !== group.relay_config.member_max_circuit_break_seconds ||
             values.relay_config.member_affinity_seconds !== group.relay_config.member_affinity_seconds
         ) payload.relay_config = values.relay_config;
         // 成员集合与顺序有任一处不同就整体提交; 后端按授权主键匹配, 已有成员保留其主键与统计。

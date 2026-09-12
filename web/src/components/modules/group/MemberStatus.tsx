@@ -5,9 +5,9 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import type { Group } from '@/api/group';
 
-// MemberStatusProps 描述成员的冷却和亲和状态。
+// MemberStatusProps 描述成员的熔断和亲和状态。
 interface MemberStatusProps {
-    group: Group; // group 提供当前路由和成员冷却时间戳。
+    group: Group; // group 提供当前路由和成员熔断时间戳。
     itemId?: number; // itemId 是待展示状态的成员 ID。
     now: number; // now 是所属列表共享的当前 Unix 毫秒时间。
     active?: boolean; // active 表示该成员当前正在使用。
@@ -24,8 +24,8 @@ export function useRuntimeClock(source?: Group | Group[]) {
         if (group.mode !== 'failover') continue;
         enabled = true;
         lastDeadline = Math.max(lastDeadline, group.runtime.affinity_until);
-        for (const cooldownUntil of Object.values(group.runtime.cooldowns)) {
-            lastDeadline = Math.max(lastDeadline, cooldownUntil);
+        for (const trippedUntil of Object.values(group.runtime.tripped_until)) {
+            lastDeadline = Math.max(lastDeadline, trippedUntil);
         }
     }
 
@@ -51,26 +51,26 @@ export function useRuntimeClock(source?: Group | Group[]) {
     return now;
 }
 
-// MemberStatus 展示成员的冷却、亲和倒计时或当前使用圆点。
+// MemberStatus 展示成员的熔断、亲和倒计时或当前使用圆点。
 export function MemberStatus({ group, itemId, now, active = false, activeClassName }: MemberStatusProps) {
     const t = useTranslations('group.card');
 
     if (group.mode === 'failover' && itemId !== undefined) {
-        const cooldownUntil = group.runtime.cooldowns[itemId] ?? 0;
+        const trippedUntil = group.runtime.tripped_until[itemId] ?? 0;
         const affinityUntil = group.runtime.current_item_id === itemId
             ? group.runtime.affinity_until
             : 0;
-        if (now < cooldownUntil || now < affinityUntil) {
-            const cooling = now < cooldownUntil;
-            const deadline = cooling ? cooldownUntil : affinityUntil;
-            const label = t(cooling ? 'cooling' : 'affinity', { seconds: Math.ceil((deadline - now) / 1000) });
+        if (now < trippedUntil || now < affinityUntil) {
+            const tripped = now < trippedUntil;
+            const deadline = tripped ? trippedUntil : affinityUntil;
+            const label = t(tripped ? 'tripped' : 'affinity', { seconds: Math.ceil((deadline - now) / 1000) });
 
             return (
                 <Badge
                     variant="outline"
                     className={cn(
                         'shrink-0 px-1.5 py-0 text-[10px] font-medium',
-                        cooling
+                        tripped
                             ? 'border-orange-500/30 bg-orange-500/10 text-orange-600 dark:text-orange-400'
                             : 'border-cyan-500/30 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400'
                     )}

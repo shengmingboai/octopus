@@ -59,7 +59,7 @@ function MemberItem({
     onRemove: (id: string) => void;
     onActivate?: (itemId: number) => void;
     isActive?: boolean;
-    group?: Group; // group 提供成员当前的冷却和亲和时间。
+    group?: Group; // group 提供成员当前的熔断和亲和时间。
     now: number; // now 是成员列表共享的当前 Unix 毫秒时间。
     isRemoving?: boolean;
     showConfirmDelete?: boolean;

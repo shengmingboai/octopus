@@ -10,23 +10,25 @@ const (
 
 // 分组 Relay 的持久化配置，数据库中以 JSON 存储。
 type GroupRelayConfig struct {
-	MemberMaxAttempts          int `json:"member_max_attempts" binding:"omitempty,min=1"`           // 单个成员包含首次请求的总尝试次数，仅在故障转移模式生效。
-	MemberRetryIntervalSeconds int `json:"member_retry_interval_seconds" binding:"omitempty,min=1"` // 同一成员相邻两次尝试之间的等待秒数。
-	MemberCooldownSeconds      int `json:"member_cooldown_seconds" binding:"omitempty,min=1"`       // 单个成员耗尽尝试后被跳过的秒数，仅在故障转移模式生效。
-	MemberAffinitySeconds      int `json:"member_affinity_seconds" binding:"omitempty,min=0"`       // 成员亲和时间:故障切换成功后继续保持当前成员的秒数;当前成员失败会立即结束亲和,0 表示不保持。
+	MemberMaxAttempts            int `json:"member_max_attempts" binding:"omitempty,min=1"`              // 单个成员包含首次请求的总尝试次数，仅在故障转移模式生效。
+	MemberRetryIntervalSeconds   int `json:"member_retry_interval_seconds" binding:"omitempty,min=1"`    // 同一成员相邻两次尝试之间的等待秒数。
+	MemberCircuitBreakSeconds    int `json:"member_circuit_break_seconds" binding:"omitempty,min=1"`     // 成员连续失败达到总尝试次数后触发熔断的基础秒数，连续触发时按指数退避增长，仅在故障转移模式生效。
+	MemberMaxCircuitBreakSeconds int `json:"member_max_circuit_break_seconds" binding:"omitempty,min=1"` // 熔断时间指数退避增长的上限秒数，不低于基础熔断时间；成员探测成功后回到基础熔断时间。
+	MemberAffinitySeconds        int `json:"member_affinity_seconds" binding:"omitempty,min=0"`          // 成员亲和时间:故障切换成功后继续保持当前成员的秒数;当前成员失败会立即结束亲和,0 表示不保持。
 }
 
 // DefaultGroupRelayConfig 返回新分组使用的 Relay 默认配置。
 func DefaultGroupRelayConfig() GroupRelayConfig {
 	return GroupRelayConfig{
-		MemberMaxAttempts:          2,
-		MemberRetryIntervalSeconds: 3,
-		MemberCooldownSeconds:      60,
-		MemberAffinitySeconds:      300,
+		MemberMaxAttempts:            2,
+		MemberRetryIntervalSeconds:   3,
+		MemberCircuitBreakSeconds:    60,
+		MemberMaxCircuitBreakSeconds: 600,
+		MemberAffinitySeconds:        300,
 	}
 }
 
-// NormalizeGroupRelayConfig 补齐分组 Relay 配置中的空值。
+// NormalizeGroupRelayConfig 补齐分组 Relay 配置中的空值, 并把最大熔断时间抬到不低于基础熔断时间。
 func NormalizeGroupRelayConfig(config *GroupRelayConfig) {
 	defaults := DefaultGroupRelayConfig()
 	if *config == (GroupRelayConfig{}) {
@@ -39,8 +41,15 @@ func NormalizeGroupRelayConfig(config *GroupRelayConfig) {
 	if config.MemberRetryIntervalSeconds < 1 {
 		config.MemberRetryIntervalSeconds = defaults.MemberRetryIntervalSeconds
 	}
-	if config.MemberCooldownSeconds < 1 {
-		config.MemberCooldownSeconds = defaults.MemberCooldownSeconds
+	if config.MemberCircuitBreakSeconds < 1 {
+		config.MemberCircuitBreakSeconds = defaults.MemberCircuitBreakSeconds
+	}
+	if config.MemberMaxCircuitBreakSeconds < 1 {
+		config.MemberMaxCircuitBreakSeconds = defaults.MemberMaxCircuitBreakSeconds
+	}
+	// 最大熔断时间晚于基础熔断时间加入, 旧分组补默认上限时不能把原本更长的基础熔断时间截短; 新提交的上限低于基础值同样按基础值算。
+	if config.MemberMaxCircuitBreakSeconds < config.MemberCircuitBreakSeconds {
+		config.MemberMaxCircuitBreakSeconds = config.MemberCircuitBreakSeconds
 	}
 	if config.MemberAffinitySeconds < 0 {
 		config.MemberAffinitySeconds = defaults.MemberAffinitySeconds

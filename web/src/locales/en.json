@@ -332,7 +332,7 @@
         "card": {
             "empty": "No rules",
             "activate": "Set as active",
-            "cooling": "Cooling {seconds}s",
+            "tripped": "Tripped {seconds}s",
             "affinity": "Affinity {seconds}s"
         },
         "detail": {
@@ -354,8 +354,10 @@
             "retryCountHint": "Total attempts per member, including the first request",
             "retryInterval": "Retry Interval (s)",
             "retryIntervalHint": "Wait time between attempts on the same member",
-            "cooldown": "Cooldown (s)",
-            "cooldownHint": "Time a member is paused after retries are exhausted",
+            "circuitBreak": "Base Circuit Break (s)",
+            "circuitBreakHint": "Once a member fails up to the maximum attempts it trips; the break time grows exponentially on consecutive trips and resets when a probe succeeds",
+            "maxCircuitBreak": "Max Circuit Break (s)",
+            "maxCircuitBreakHint": "Upper limit for the exponentially growing break time, never below the base value",
             "affinity": "Failover Affinity (s)",
             "affinityHint": "Time to keep the fallback member after its first successful request",
             "items": "Member Order",

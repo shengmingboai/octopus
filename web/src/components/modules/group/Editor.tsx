@@ -28,7 +28,8 @@ export type GroupEditorValues = {
 const defaultRelayConfig: GroupRelayConfig = {
     member_max_attempts: 2,
     member_retry_interval_seconds: 1,
-    member_cooldown_seconds: 60,
+    member_circuit_break_seconds: 60,
+    member_max_circuit_break_seconds: 600,
     member_affinity_seconds: 0,
 };
 
@@ -499,20 +500,39 @@ export function GroupEditor({
                                     />
                                 </Field>
                                 <Field>
-                                    <FieldLabel htmlFor="group-cooldown">
-                                        {t('form.cooldown')}
-                                        <FieldHelp text={t('form.cooldownHint')} />
+                                    <FieldLabel htmlFor="group-circuit-break">
+                                        {t('form.circuitBreak')}
+                                        <FieldHelp text={t('form.circuitBreakHint')} />
                                     </FieldLabel>
                                     <Input
-                                        id="group-cooldown"
+                                        id="group-circuit-break"
                                         type="number"
                                         inputMode="numeric"
                                         min={1}
                                         step={1}
-                                        value={String(relayConfig.member_cooldown_seconds)}
+                                        value={String(relayConfig.member_circuit_break_seconds)}
                                         onChange={(event) => {
                                             const value = Number.parseInt(event.target.value, 10);
-                                            setRelayConfig((prev) => ({ ...prev, member_cooldown_seconds: Number.isFinite(value) && value >= 1 ? value : 1 }));
+                                            setRelayConfig((prev) => ({ ...prev, member_circuit_break_seconds: Number.isFinite(value) && value >= 1 ? value : 1 }));
+                                        }}
+                                        className="rounded-xl"
+                                    />
+                                </Field>
+                                <Field>
+                                    <FieldLabel htmlFor="group-max-circuit-break">
+                                        {t('form.maxCircuitBreak')}
+                                        <FieldHelp text={t('form.maxCircuitBreakHint')} />
+                                    </FieldLabel>
+                                    <Input
+                                        id="group-max-circuit-break"
+                                        type="number"
+                                        inputMode="numeric"
+                                        min={1}
+                                        step={1}
+                                        value={String(relayConfig.member_max_circuit_break_seconds)}
+                                        onChange={(event) => {
+                                            const value = Number.parseInt(event.target.value, 10);
+                                            setRelayConfig((prev) => ({ ...prev, member_max_circuit_break_seconds: Number.isFinite(value) && value >= 1 ? value : 1 }));
                                         }}
                                         className="rounded-xl"
                                     />

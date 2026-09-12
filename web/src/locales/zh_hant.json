@@ -332,7 +332,7 @@
         "card": {
             "empty": "暫無規則",
             "activate": "設為活動項",
-            "cooling": "冷卻 {seconds}s",
+            "tripped": "熔斷 {seconds}s",
             "affinity": "親和 {seconds}s"
         },
         "detail": {
@@ -354,8 +354,10 @@
             "retryCountHint": "單個成員包含首次請求的總嘗試次數",
             "retryInterval": "重試間隔（秒）",
             "retryIntervalHint": "同一成員相鄰兩次嘗試的等待時間",
-            "cooldown": "冷卻時間（秒）",
-            "cooldownHint": "成員重試耗盡後暫停使用的時間",
+            "circuitBreak": "基礎熔斷時間（秒）",
+            "circuitBreakHint": "成員連續失敗達到總嘗試次數後觸發熔斷，熔斷時間按指數退避增長，探測成功後恢復",
+            "maxCircuitBreak": "最大熔斷時間（秒）",
+            "maxCircuitBreakHint": "熔斷時間指數退避增長的上限，不低於基礎熔斷時間",
             "affinity": "故障切換親和時間（秒）",
             "affinityHint": "備用成員首次請求成功後繼續使用該成員的時間",
             "items": "成員順序",
