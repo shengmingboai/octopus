@@ -28,8 +28,6 @@ export type GroupEditorValues = {
 const defaultRelayConfig: GroupRelayConfig = {
     member_max_attempts: 2,
     member_retry_interval_seconds: 1,
-    member_non_stream_response_timeout_seconds: 120,
-    member_stream_first_event_timeout_seconds: 30,
     member_cooldown_seconds: 60,
     member_affinity_seconds: 0,
 };
@@ -496,44 +494,6 @@ export function GroupEditor({
                                         onChange={(event) => {
                                             const value = Number.parseInt(event.target.value, 10);
                                             setRelayConfig((prev) => ({ ...prev, member_retry_interval_seconds: Number.isFinite(value) && value >= 1 ? value : 1 }));
-                                        }}
-                                        className="rounded-xl"
-                                    />
-                                </Field>
-                                <Field>
-                                    <FieldLabel htmlFor="group-non-stream-timeout">
-                                        {t('form.nonStreamTimeout')}
-                                        <FieldHelp text={t('form.nonStreamTimeoutHint')} />
-                                    </FieldLabel>
-                                    <Input
-                                        id="group-non-stream-timeout"
-                                        type="number"
-                                        inputMode="numeric"
-                                        min={1}
-                                        step={1}
-                                        value={String(relayConfig.member_non_stream_response_timeout_seconds)}
-                                        onChange={(event) => {
-                                            const value = Number.parseInt(event.target.value, 10);
-                                            setRelayConfig((prev) => ({ ...prev, member_non_stream_response_timeout_seconds: Number.isFinite(value) && value >= 1 ? value : 1 }));
-                                        }}
-                                        className="rounded-xl"
-                                    />
-                                </Field>
-                                <Field>
-                                    <FieldLabel htmlFor="group-stream-timeout">
-                                        {t('form.streamTimeout')}
-                                        <FieldHelp text={t('form.streamTimeoutHint')} />
-                                    </FieldLabel>
-                                    <Input
-                                        id="group-stream-timeout"
-                                        type="number"
-                                        inputMode="numeric"
-                                        min={1}
-                                        step={1}
-                                        value={String(relayConfig.member_stream_first_event_timeout_seconds)}
-                                        onChange={(event) => {
-                                            const value = Number.parseInt(event.target.value, 10);
-                                            setRelayConfig((prev) => ({ ...prev, member_stream_first_event_timeout_seconds: Number.isFinite(value) && value >= 1 ? value : 1 }));
                                         }}
                                         className="rounded-xl"
                                     />

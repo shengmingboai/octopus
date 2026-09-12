@@ -11,8 +11,6 @@ export type GroupMode = 'manual' | 'failover';
 export interface GroupRelayConfig {
     member_max_attempts: number;
     member_retry_interval_seconds: number;
-    member_non_stream_response_timeout_seconds: number;
-    member_stream_first_event_timeout_seconds: number;
     member_cooldown_seconds: number;
     member_affinity_seconds: number;
 }

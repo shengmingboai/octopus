@@ -116,8 +116,6 @@ export const GroupCard = memo(function GroupCard({ group, now }: { group: Group;
         if (
             values.relay_config.member_max_attempts !== group.relay_config.member_max_attempts ||
             values.relay_config.member_retry_interval_seconds !== group.relay_config.member_retry_interval_seconds ||
-            values.relay_config.member_non_stream_response_timeout_seconds !== group.relay_config.member_non_stream_response_timeout_seconds ||
-            values.relay_config.member_stream_first_event_timeout_seconds !== group.relay_config.member_stream_first_event_timeout_seconds ||
             values.relay_config.member_cooldown_seconds !== group.relay_config.member_cooldown_seconds ||
             values.relay_config.member_affinity_seconds !== group.relay_config.member_affinity_seconds
         ) payload.relay_config = values.relay_config;
