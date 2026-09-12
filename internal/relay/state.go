@@ -7,9 +7,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/looplj/axonhub/llm"
 	"github.com/shengmingboai/octopus/internal/model"
 	"github.com/shengmingboai/octopus/internal/op"
-	"github.com/looplj/axonhub/llm"
 )
 
 // 客户端请求在转发过程中的当前状态。
@@ -25,20 +25,22 @@ const (
 
 // 客户端请求的完整进程内状态, 同时作为状态流的消息形状; 上半部分在请求到达时写入并在结束时定稿, 下半部分每轮循环覆盖。
 type RequestState struct {
-	ID         uint64         `json:"id"`           // 请求在当前进程内的唯一标识。
-	Status     Status         `json:"status"`       // 请求当前状态。
-	StartedAt  time.Time      `json:"started_at"`   // 请求到达时间。
-	Duration   time.Duration  `json:"duration"`     // 请求总耗时, 未结束时为零。
-	Model      string         `json:"model"`        // 客户端请求的模型名称, 即分组名称。
-	Protocol   model.Protocol `json:"protocol"`     // 客户端请求使用的协议, 由入站格式定出, 单个协议位而非掩码组合。
-	GroupID    int            `json:"group_id"`     // 承载本请求的分组 ID, 供界面按主键直接定位分组而不必按名称回查。
-	APIKeyName string         `json:"api_key_name"` // 发起请求时的 API Key 名称。
-	Usage      llm.Usage      `json:"usage"`        // 请求结束时写入的展示用量。
-	Cost       float64        `json:"cost"`         // 请求结束时写入的累计费用。
+	ID         uint64         `json:"id"`                   // 请求在当前进程内的唯一标识。
+	Status     Status         `json:"status"`               // 请求当前状态。
+	StartedAt  time.Time      `json:"started_at"`           // 请求到达时间。
+	Duration   time.Duration  `json:"duration"`             // 请求总耗时, 未结束时为零。
+	FirstToken time.Duration  `json:"first_token_duration"` // 流式首帧写出客户端的耗时, 非流式或尚未取得首字时为零。
+	Model      string         `json:"model"`                // 客户端请求的模型名称, 即分组名称。
+	Protocol   model.Protocol `json:"protocol"`             // 客户端请求使用的协议, 由入站格式定出, 单个协议位而非掩码组合。
+	GroupID    int            `json:"group_id"`             // 承载本请求的分组 ID, 供界面按主键直接定位分组而不必按名称回查。
+	APIKeyName string         `json:"api_key_name"`         // 发起请求时的 API Key 名称。
+	Usage      llm.Usage      `json:"usage"`                // 请求结束时写入的展示用量。
+	Cost       float64        `json:"cost"`                 // 请求结束时写入的累计费用。
 
 	Round          int            `json:"round"`            // 最新一轮循环的递增序号, 人工中止按此匹配以免误杀下一轮。
 	RoundStartedAt time.Time      `json:"round_started_at"` // 最新一轮上游请求的开始时间。
 	TargetChannel  string         `json:"target_channel"`   // 最新一轮选中的渠道名称。
+	TargetKeyName  string         `json:"target_key_name"`  // 最新一轮使用的渠道凭据名称。
 	TargetModel    string         `json:"target_model"`     // 最新一轮实际请求上游的模型名称。
 	TargetProtocol model.Protocol `json:"target_protocol"`  // 最新一轮实际请求上游的协议, 与 Protocol 不同即本轮做了跨协议转换; 0 表示尚未选出。
 	Sending        bool           `json:"sending"`          // 最新一轮是否仍在等待上游响应。
@@ -54,8 +56,8 @@ const streamBuffer = 16 // 单个状态流连接的非阻塞消息缓冲容量�
 const maxFinished = 50  // 进程内最多保留的已结束请求数量。
 
 var (
-	idSeq    atomic.Uint64                     // 进程内严格递增的请求 ID。
-	mu       sync.Mutex                        // 全部共享状态的互斥锁。
+	idSeq    atomic.Uint64                          // 进程内严格递增的请求 ID。
+	mu       sync.Mutex                             // 全部共享状态的互斥锁。
 	requests = make(map[uint64]*RequestState)       // 按请求 ID 保存的全部请求状态。
 	watchers = make(map[chan RequestState]struct{}) // 全部状态流 SSE 连接。
 )
@@ -85,13 +87,14 @@ func newRequestState(ctx context.Context, modelName string, groupID int, protoco
 }
 
 // startRound 记录本轮选中的目标并进入上游请求, cancel 供人工中止本轮, 返回递增的轮次序号。
-func (r *RequestState) startRound(cancel context.CancelFunc, channel, modelName string, protocol model.Protocol) int {
+func (r *RequestState) startRound(cancel context.CancelFunc, channel, keyName, modelName string, protocol model.Protocol) int {
 	mu.Lock()
 	defer mu.Unlock()
 
 	r.Round++
 	r.RoundStartedAt = time.Now()
 	r.TargetChannel = channel
+	r.TargetKeyName = keyName
 	r.TargetModel = modelName
 	r.TargetProtocol = protocol
 	r.Sending = true
@@ -139,10 +142,14 @@ func (r *RequestState) wait(ctx context.Context, seconds int) bool {
 }
 
 // markCommitted 标记响应已提交; 流式响应在此之后仍会持续转发, 故必须先于提交动作调用。
-func (r *RequestState) markCommitted() {
+// streaming 为真时记录首字耗时, 即首个事件写出客户端的时刻; 非流式一次交付没有独立的首字时间。
+func (r *RequestState) markCommitted(streaming bool) {
 	mu.Lock()
 	defer mu.Unlock()
 
+	if streaming && r.FirstToken == 0 {
+		r.FirstToken = time.Since(r.StartedAt)
+	}
 	r.Status = StatusCommitted
 	publishRequestLocked(r)
 }

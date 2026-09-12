@@ -22,6 +22,7 @@ export interface RelayLogOverview {
     status: RequestState;
     started_at: string;
     duration: number;
+    first_token_duration: number;
     model: string;
     protocol: number;
     group_id: number;
@@ -31,6 +32,7 @@ export interface RelayLogOverview {
     round: number;
     round_started_at: string;
     target_channel: string;
+    target_key_name: string;
     target_model: string;
     target_protocol: number;
     sending: boolean;
