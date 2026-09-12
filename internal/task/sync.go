@@ -9,9 +9,9 @@ import (
 
 	"github.com/charmbracelet/log"
 
-	"github.com/bestruirui/octopus/internal/helper"
-	"github.com/bestruirui/octopus/internal/model"
-	"github.com/bestruirui/octopus/internal/op"
+	"github.com/shengmingboai/octopus/internal/helper"
+	"github.com/shengmingboai/octopus/internal/model"
+	"github.com/shengmingboai/octopus/internal/op"
 )
 
 var (

@@ -7,8 +7,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/bestruirui/octopus/internal/model"
-	"github.com/bestruirui/octopus/internal/op"
+	"github.com/shengmingboai/octopus/internal/model"
+	"github.com/shengmingboai/octopus/internal/op"
 	"github.com/looplj/axonhub/llm"
 )
 

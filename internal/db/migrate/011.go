@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/bestruirui/octopus/internal/model"
+	"github.com/shengmingboai/octopus/internal/model"
 	"github.com/charmbracelet/log"
 	"gorm.io/gorm"
 )

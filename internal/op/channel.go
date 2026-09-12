@@ -6,9 +6,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/bestruirui/octopus/internal/db"
-	"github.com/bestruirui/octopus/internal/model"
-	"github.com/bestruirui/octopus/internal/utils/cache"
+	"github.com/shengmingboai/octopus/internal/db"
+	"github.com/shengmingboai/octopus/internal/model"
+	"github.com/shengmingboai/octopus/internal/utils/cache"
 	"github.com/charmbracelet/log"
 	"gorm.io/gorm"
 )

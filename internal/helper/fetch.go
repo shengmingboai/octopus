@@ -10,9 +10,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/bestruirui/octopus/internal/model"
-	"github.com/bestruirui/octopus/internal/op"
-	"github.com/bestruirui/octopus/internal/rhttp"
+	"github.com/shengmingboai/octopus/internal/model"
+	"github.com/shengmingboai/octopus/internal/op"
+	"github.com/shengmingboai/octopus/internal/rhttp"
 	"github.com/dlclark/regexp2"
 )
 

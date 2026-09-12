@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"syscall"
 
-	"github.com/bestruirui/octopus/internal/utils/shutdown"
+	"github.com/shengmingboai/octopus/internal/utils/shutdown"
 	"github.com/charmbracelet/log"
 )
 
