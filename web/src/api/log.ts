@@ -16,6 +16,19 @@ export interface RelayUsage {
     } | null;
 }
 
+// RoundAttempt 记录单次重试轮次的完整信息。
+export interface RoundAttempt {
+    round: number;
+    started_at: string;
+    channel: string;
+    key_name?: string;
+    model: string;
+    protocol: number;
+    duration: number;
+    error?: string;
+    sending: boolean;
+}
+
 // RelayLogOverview 是请求状态流发送的完整进程内请求状态。
 export interface RelayLogOverview {
     id: number;
@@ -37,6 +50,7 @@ export interface RelayLogOverview {
     target_protocol: number;
     sending: boolean;
     error?: string;
+    rounds?: RoundAttempt[];
 }
 
 // useClearLogs 清空已完成的内存日志。

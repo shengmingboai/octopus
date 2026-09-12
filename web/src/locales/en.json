@@ -427,6 +427,7 @@
             "tokens": "tokens",
             "retryIndex": "Retry {index}",
             "retryDetails": "Retry Details",
+            "channelErrors": "Channel Errors",
             "stopRound": "Stop Current Round",
             "stopFailed": "Failed to stop current round",
             "waitingChannelSelection": "Waiting for channel selection",
