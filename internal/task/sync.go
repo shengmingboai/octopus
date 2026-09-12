@@ -21,8 +21,8 @@ var (
 )
 
 // SyncModelsTask 自动拉取启用 AutoSync 的渠道的上游模型列表:
-// 新模型按探测到的协议端点建授权, 上游不再提供的模型禁用而非删除, 恢复提供的模型重新启用。
-// 人工来源的模型不参与增删改, 协议一旦配置好就不会被后续自动拉取改写。
+// 新模型按探测到的协议建授权, 上游缺失的模型禁用, 恢复提供的重新启用;
+// 人工添加的模型不增删改。
 // 返回本次同步遇到的首个错误, 供手动触发时在界面上提示。
 func SyncModelsTask() error {
 	if !syncModelsMu.TryLock() {
@@ -141,8 +141,7 @@ func syncChannelModelList(detail *model.ChannelDetail, ctx context.Context) ([]m
 	models := make([]model.ChannelModelConfig, 0, len(detail.Models)+len(protocolsByKeyByModel))
 	for _, channelModel := range detail.Models {
 		if channelModel.Source == model.ChannelModelSourceManual {
-			// 人工添加或人工接管的模型不受自动拉取影响: 上游缺失也保持人工给的启停状态,
-			// 自定义模型与临时停用因此都不会被同步改写。
+			// 人工添加的模型不受自动拉取影响。
 			models = append(models, channelModel)
 			continue
 		}

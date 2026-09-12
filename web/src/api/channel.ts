@@ -37,8 +37,8 @@ export type ChannelGrant = {
     protocols: number; // Protocol 位掩码。
 };
 
-// ChannelModelSource 是渠道模型的来源：自动拉取得到的模型启停随上游列表变化，人工添加或人工接管的不受影响。
-// 在表单里开关或用探测添入的模型都按 manual 提交，由此用户的取舍不会被自动拉取改写。
+// ChannelModelSource 是渠道模型的来源：manual 是人工添加的，自动同步不增删改；
+// auto 是拉取的，启停随上游列表变化。
 export type ChannelModelSource = 'manual' | 'auto';
 
 // ChannelModel 是渠道提供的单个上游模型；名称在渠道内唯一，读写都按它引用。

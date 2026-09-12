@@ -71,8 +71,8 @@ type ChannelKey struct {
 type ChannelModelSource string
 
 const (
-	ChannelModelSourceManual ChannelModelSource = "manual" // 人工添加或人工接管: 自动拉取不增删改它。
-	ChannelModelSourceAuto   ChannelModelSource = "auto"   // 自动拉取得到: 上游缺失时禁用, 恢复时重新启用。
+	ChannelModelSourceManual ChannelModelSource = "manual" // 人工添加: 自动拉取不增删改。
+	ChannelModelSourceAuto   ChannelModelSource = "auto"   // 拉取得到: 启停随上游列表变化。
 )
 
 // 渠道提供的单个上游模型。
@@ -80,8 +80,8 @@ type ChannelModel struct {
 	ID                 int                `json:"id" gorm:"primaryKey"`                                      // 渠道模型主键。
 	ChannelID          int                `json:"channel_id" gorm:"not null;index:idx_channel_model,unique"` // 所属渠道 ID。
 	Name               string             `json:"name" gorm:"not null;index:idx_channel_model,unique"`       // 上游模型名称。
-	Source             ChannelModelSource `json:"source" gorm:"not null;default:manual"`                     // 模型来源; auto 的启停随上游列表变化, manual 不受自动拉取影响。
-	Enabled            bool               `json:"enabled" gorm:"default:true"`                               // 上游仍提供该模型时为真; 自动拉取发现缺失时禁用, 恢复后重新启用, 其间的授权与分组成员原样保留。
+	Source             ChannelModelSource `json:"source" gorm:"not null;default:manual"`                     // 模型来源; auto 的启停随上游列表变化。
+	Enabled            bool               `json:"enabled" gorm:"default:true"`                               // 上游仍提供该模型时为真; 其间的授权与分组成员原样保留。
 	StatsMetrics                                                                                             // 该模型自身的累计统计。
 }
 
@@ -109,11 +109,10 @@ type ChannelDetail struct {
 }
 
 // 渠道模型的可编辑形状; 名称在渠道内唯一, 整体替换时以它为匹配依据。
-// 启用状态与凭据同理随提交给出: 关闭即人工停用该模型; 一并提交来源,
-// 开关过或探测添入的模型按 manual 提交, 由此不再被自动拉取增删改。
+// 来源记录模型是人工添加还是拉取的, auto 的启停随上游列表变化。
 type ChannelModelConfig struct {
 	Name    string             `json:"name"`    // 上游模型名称。
-	Source  ChannelModelSource `json:"source"`  // 模型来源; 留空按 manual 处理。
+	Source  ChannelModelSource `json:"source"`  // 模型来源; 留空按 auto 处理。
 	Enabled bool               `json:"enabled"` // 是否可用, 禁用后不参与选路但保留授权与分组成员。
 }
 

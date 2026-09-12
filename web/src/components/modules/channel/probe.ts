@@ -38,8 +38,8 @@ export function useModelProbe() {
             const grants = new Map(state.grants);
             for (const { name, protocols } of fetched) {
                 if (!models.some((m) => m.name === name)) {
-                    // 探测添入的模型按人工来源提交: 用户看得到的取舍不会被自动拉取改写。
-                    models.push({ name, source: 'manual', enabled: true });
+                    // 探测添入的模型按自动来源提交, 启停跟随自动同步。
+                    models.push({ name, source: 'auto', enabled: true });
                 }
                 const mapKey = grantKey(name, channelKey.name);
                 grants.set(mapKey, (grants.get(mapKey) ?? 0) | protocols);

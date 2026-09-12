@@ -192,9 +192,9 @@ func normalizeChannelDetail(detail *model.ChannelDetail) error {
 		if detail.Models[i].Name == "" {
 			return fmt.Errorf("channel model name is required")
 		}
-		// 来源留空按人工处理: 未声明来源的模型视为界面手工维护, 不交给自动拉取增删改。
+		// 来源留空按自动处理。
 		if detail.Models[i].Source == "" {
-			detail.Models[i].Source = model.ChannelModelSourceManual
+			detail.Models[i].Source = model.ChannelModelSourceAuto
 		}
 		if detail.Models[i].Source != model.ChannelModelSourceManual && detail.Models[i].Source != model.ChannelModelSourceAuto {
 			return fmt.Errorf("channel model source %q is invalid", detail.Models[i].Source)

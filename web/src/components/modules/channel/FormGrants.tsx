@@ -46,6 +46,7 @@ function GrantCells({ state, setState, models, keyNames, remove, icon: Icon, tip
                     disabled={total === 0}
                     onCheckedChange={() => {
                         // 已全开则整片取消, 否则整片打开; 协议位清空即该条授权不存在, 直接从 Map 移除。
+                        // 协议勾选不改变模型来源。
                         const grants = new Map(state.grants);
                         for (const modelName of models) {
                             for (const keyName of keyNames) {
@@ -114,12 +115,11 @@ export function FormGrants({ state, setState }: {
         setState({ ...state, models: state.models.filter((m) => m.name !== modelName), grants });
     };
 
-    // 开关模型即人工接管: 来源转为 manual, 自动拉取不再增删改它, 启停从此完全由用户决定。
-    // 否则开关过再被上游恢复的模型会被自动重新启用, 用户留下的停用会被改掉。
+    // 开关只改启停, 来源不变。
     const toggleModel = (modelName: string, enabled: boolean) => {
         setState({
             ...state,
-            models: state.models.map((m) => (m.name === modelName ? { ...m, source: 'manual', enabled } : m)),
+            models: state.models.map((m) => (m.name === modelName ? { ...m, enabled } : m)),
         });
     };
 
@@ -234,7 +234,7 @@ export function FormGrants({ state, setState }: {
                                             {granted}/{keyNames.length}
                                         </span>
                                     </button>
-                                    {/* 启停一行一个开关; 自动拉取得到的模型默认开启, 开关即转为人工管理。 */}
+                                    {/* 启停一行一个开关, 不影响来源。 */}
                                     <Switch
                                         checked={channelModel.enabled}
                                         onCheckedChange={(checked) => toggleModel(modelName, checked)}
