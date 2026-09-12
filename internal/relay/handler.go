@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"slices"
@@ -23,7 +24,8 @@ import (
 	"github.com/tidwall/sjson"
 )
 
-// Forward 按客户端协议承载一个请求的完整转发过程: 解析请求, 定位分组, 循环选目标请求上游, 直至提交响应或请求结束。
+// Forward 按客户端协议承载一个请求的完整转发过程: 解析请求, 定位分组, 循环选目标请求上游, 直至提交响应,
+// 一轮把分组内全部成员试到失败, 或请求结束。
 func Forward(format llm.APIFormat) gin.HandlerFunc {
 	// 客户端协议同时定出入站转换器和请求协议位: 后者随请求状态推给界面, 也是每轮选择上游协议的首选。
 	var inbound transformer.Inbound
@@ -78,6 +80,27 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 		ctx := c.Request.Context()
 		failedItemID := 0 // 当前累计连续失败次数的成员 ID。
 		failures := 0     // 该成员包含首次请求的连续失败次数。
+		var lastErr error // 分组内最后一个成员的失败原因, 一轮全部失败时随错误返回给客户端。
+
+		// memberFailed 记录当前成员一次不可用: 故障转移模式达到总尝试次数后将其打入冷却并立即换下一个成员,
+		// 手动模式没有冷却轮换, 唯一成员耗尽总尝试次数后本轮即告失败, 直接以失败终态结束请求。
+		// 返回 false 表示请求已经结束, 外层循环应直接返回。
+		memberFailed := func(group model.Group, itemID int) bool {
+			if failedItemID == itemID {
+				failures++
+			} else {
+				failedItemID = itemID
+				failures = 1
+			}
+			if recordRouteFailure(group, itemID, failures) {
+				return true
+			}
+			if group.Mode == model.GroupModeManual && failures >= group.RelayConfig.MemberMaxAttempts {
+				failGroupRound(c, request, inbound, lastErr)
+				return false
+			}
+			return request.wait(ctx, group.RelayConfig.MemberRetryIntervalSeconds)
+		}
 
 		for {
 			if ctx.Err() != nil {
@@ -85,30 +108,36 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				return
 			}
 
-			// 分组配置和成员随时可改, 故每轮重新读取; 分组被删除时等待它重新出现。
+			// 分组配置和成员随时可改, 故每轮重新读取; 分组被删说明模型已随分组消失, 直接以失败结束请求。
 			group, err = op.GroupGetByName(metadata.Model)
 			if err != nil {
-				if !request.wait(ctx, model.DefaultGroupRelayConfig().MemberRetryIntervalSeconds) {
-					return
-				}
-				continue
+				request.markFailed(errors.New("model not found"), "", nil)
+				rejectRequest(c, inbound, errors.New("model not found"))
+				return
 			}
 
 			// 手动模式取人工指定的成员, 故障转移模式按优先级选择未禁用且不在冷却中的成员。
-			// 没有目标时等待重新选择, 期间人工切换渠道, 补齐成员或成员冷却到期即可让请求继续。
+			// 手动模式尚未指定成员时等待人工指定, 期间补齐成员或人工切换渠道即可让请求继续;
+			// 其余没有目标的情况——故障转移模式下成员已全部试到失败(或尚无可用成员), 手动模式下已指定的成员被禁用或删除——
+			// 一轮到此结束, 直接以失败结束请求, 等待既不会让它恢复也会把客户端无限挂起。
 			item := pickGroupItem(group)
 			if item.ID == 0 {
-				if !request.wait(ctx, group.RelayConfig.MemberRetryIntervalSeconds) {
-					return
+				if group.Mode == model.GroupModeManual && group.ActiveItemID == 0 {
+					if !request.wait(ctx, group.RelayConfig.MemberRetryIntervalSeconds) {
+						return
+					}
+					continue
 				}
-				continue
+				failGroupRound(c, request, inbound, lastErr)
+				return
 			}
 
-			// 成员指向的授权缺失, 凭据被停用或两侧已被删除时等待, 该成员可能很快被改回可用配置。
+			// 成员指向的授权缺失, 凭据被停用或两侧已被删除, 该成员同样视作一次失败计入本轮, 耗尽总尝试次数后冷却跳过。
 			// ChannelGrantGet 一次校验齐这几种情况, 取到的授权必然可直接转发, 无需再逐项检查。
 			grant, err := op.ChannelGrantGet(item.ChannelGrantID)
 			if err != nil {
-				if !request.wait(ctx, group.RelayConfig.MemberRetryIntervalSeconds) {
+				lastErr = err
+				if !memberFailed(group, item.ID) {
 					return
 				}
 				continue
@@ -116,10 +145,11 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 			channelModel := grant.ChannelModel
 			channelKey := grant.ChannelKey
 
-			// 成员指向的渠道已被删除时同样等待, 该成员可能很快被改回可用渠道。
+			// 成员指向的渠道已被删除时同样计入一轮失败。
 			channel, err := op.ChannelGet(channelModel.ChannelID)
 			if err != nil {
-				if !request.wait(ctx, group.RelayConfig.MemberRetryIntervalSeconds) {
+				lastErr = err
+				if !memberFailed(group, item.ID) {
 					return
 				}
 				continue
@@ -213,18 +243,10 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				_ = op.ChannelModelStatsUpdate(channelModel.ID, metrics)
 				_ = op.ChannelKeyStatsUpdate(channelKey.ID, metrics)
 
-				// 成员改变时重新开始累计该成员在本请求内的连续失败次数。
-				if failedItemID == item.ID {
-					failures++
-				} else {
-					failedItemID = item.ID
-					failures = 1
-				}
-				// 达到总尝试次数时成员进入冷却并立即重新选路, 否则等待后重试。
-				if recordRouteFailure(group, item.ID, failures) {
-					continue
-				}
-				if !request.wait(ctx, group.RelayConfig.MemberRetryIntervalSeconds) {
+				// 成员失败计入本轮: 达到总尝试次数时故障转移模式进入冷却并立即重新选路, 否则等待后重试;
+				// 手动模式耗尽总尝试次数后直接以失败结束请求。
+				lastErr = err
+				if !memberFailed(group, item.ID) {
 					return
 				}
 				continue
@@ -356,4 +378,25 @@ func rejectRequest(c *gin.Context, inbound transformer.Inbound, err error) {
 	})
 	c.Data(response.StatusCode, "application/json", response.Body)
 	c.Abort()
+}
+
+// rejectUnavailable 以客户端协议的错误格式返回一轮失败的网关错误, 用于分组内已经没有任何可用成员。
+func rejectUnavailable(c *gin.Context, inbound transformer.Inbound, err error) {
+	response := inbound.TransformError(c.Request.Context(), &llm.ResponseError{
+		StatusCode: http.StatusBadGateway,
+		Detail:     llm.ErrorDetail{Message: err.Error(), Type: "api_error"},
+	})
+	c.Data(response.StatusCode, "application/json", response.Body)
+	c.Abort()
+}
+
+// failGroupRound 以一轮失败的终态结束请求并给客户端返回网关错误。
+// lastErr 为空说明分组内没有可用成员, 尚未发起过任何上游请求; 否则带上最后一个成员的失败原因。
+func failGroupRound(c *gin.Context, request *RequestState, inbound transformer.Inbound, lastErr error) {
+	err := errors.New("no available group member")
+	if lastErr != nil {
+		err = fmt.Errorf("all group members failed: %w", lastErr)
+	}
+	request.markFailed(err, "", nil)
+	rejectUnavailable(c, inbound, err)
 }
