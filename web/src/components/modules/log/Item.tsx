@@ -45,18 +45,6 @@ function formatMilliseconds(value: number) {
     return `${(milliseconds / 1000).toFixed(2)}s`;
 }
 
-// formatRoundStartedAt 将服务端轮次开始时间格式化为本地时分秒.毫秒, 各部分固定补零。
-function formatRoundStartedAt(value: string) {
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime()) || date.getUTCFullYear() === 1) return '--:--:--.---';
-    return `${date.toLocaleTimeString(undefined, {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false,
-    })}.${String(date.getMilliseconds()).padStart(3, '0')}`;
-}
-
 // PROTOCOL_LABELS 是协议位值对应的界面标识, 与渠道页和分组页的授权标签同一套词。
 // 键是单个协议位而非掩码组合: 日志记录的是本次请求与本轮上游各自实际使用的那一个协议。
 const PROTOCOL_LABELS: Record<number, string> = {
@@ -152,18 +140,20 @@ function JsonContent({ content, fallbackText }: { content: string | object | und
     );
 }
 
-// aggregateRoundsByChannel 按渠道聚合轮次, 每个渠道只保留最后一次尝试。
-function aggregateRoundsByChannel(rounds: RoundAttempt[] | undefined): RoundAttempt[] {
+// aggregateRoundsByChannelKey 按渠道与凭据聚合轮次, 每个渠道凭据组合只保留最后一次尝试。
+// 不能只按渠道聚合: 同一渠道内换凭据后成功, 该渠道的记录会被成功那轮覆盖, 此前凭据的失败就再也看不到。
+function aggregateRoundsByChannelKey(rounds: RoundAttempt[] | undefined): RoundAttempt[] {
     if (!rounds || !rounds.length) return [];
-    const channelMap = new Map<string, RoundAttempt>();
+    const roundMap = new Map<string, RoundAttempt>();
     for (const round of rounds) {
-        const key = round.channel || '-';
-        const existing = channelMap.get(key);
+        // 渠道名与凭据名以换行拼接成键, 两者都不会含换行, 不同组合不会撞键。
+        const key = `${round.channel}\n${round.key_name ?? ''}`;
+        const existing = roundMap.get(key);
         if (!existing || round.round > existing.round) {
-            channelMap.set(key, round);
+            roundMap.set(key, round);
         }
     }
-    return Array.from(channelMap.values()).sort((a, b) => a.round - b.round);
+    return Array.from(roundMap.values()).sort((a, b) => a.round - b.round);
 }
 
 // LogDetail 渲染日志详情弹窗内容, 仅在弹窗打开期间挂载, 由此避免列表中的卡片持有详情查询和状态。
@@ -184,7 +174,7 @@ function LogDetail({ log, now }: { log: RelayLogOverview; now: number }) {
     const errorText = log.error ?? '';
     const requestFailed = log.status === 'failed' || log.status === 'canceled';
     const responseCommitted = log.status === 'committed';
-    const aggregatedRounds = useMemo(() => aggregateRoundsByChannel(log.rounds), [log.rounds]);
+    const aggregatedRounds = useMemo(() => aggregateRoundsByChannelKey(log.rounds), [log.rounds]);
     const hasFailedRounds = aggregatedRounds.some(r => r.error);
     const isWaitingForSelection = log.status === 'running' && !log.sending && activeGroup?.mode === 'manual' && activeGroup.runtime.current_item_id === 0; // isWaitingForSelection 表示手动模式请求正等待选择渠道。
 
@@ -237,9 +227,9 @@ function LogDetail({ log, now }: { log: RelayLogOverview; now: number }) {
                         {errorsExpanded && (
                             <div className="divide-y divide-destructive/20">
                                 {aggregatedRounds.filter(r => r.error).map((round) => (
-                                    <div key={round.channel} className="flex flex-col gap-1.5 px-3 py-2.5 text-xs">
+                                    <div key={round.round} className="flex flex-col gap-1.5 px-3 py-2.5 text-xs">
                                         <div className="flex items-center gap-2">
-                                            <span className="shrink-0 font-semibold text-foreground">{round.channel || '-'}</span>
+                                            <span className="shrink-0 font-semibold text-foreground">{round.key_name ? `${round.channel} · ${round.key_name}` : round.channel || '-'}</span>
                                             <span className="shrink-0 text-muted-foreground">{t('retryIndex', { index: round.round })}</span>
                                             {round.duration > 0 && (
                                                 <span className="shrink-0 text-muted-foreground tabular-nums">{formatMilliseconds(round.duration)}</span>
