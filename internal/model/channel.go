@@ -40,6 +40,7 @@ type ChannelConfig struct {
 	MatchRegex               string         `json:"match_regex"`                                                                                        // 拉取模型列表时的过滤表达式; 留空表示不过滤。
 	AutoSync                 bool           `json:"auto_sync" gorm:"default:false"`                                                                     // 是否随自动拉取任务与上游同步模型列表。
 	AutoGroup                bool           `json:"auto_group" gorm:"default:false"`                                                                    // 是否把模型自动加入匹配的分组。
+	SkipCircuitBreak         bool           `json:"skip_circuit_break" gorm:"default:false"`                                                            // 是否跳过熔断: 为真的渠道成员失败不进熔断表, 每个请求都会先试它; 仅故障转移模式生效。
 }
 
 // 单个上游渠道的共享配置; 路径按协议分别配置, 凭据由 ChannelKey 提供。

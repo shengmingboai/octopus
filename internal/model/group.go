@@ -82,6 +82,8 @@ type GroupItem struct {
 	KeyName     string   `json:"key_name" gorm:"-"`     // 授权引用的凭据名称。
 	Protocols   Protocol `json:"protocols" gorm:"-"`    // 授权支持的协议位掩码。
 	Available   bool     `json:"available" gorm:"-"`    // 渠道与凭据均启用且模型, 凭据均存在时为真; 为假表示该成员当前无法转发, 但仍需列出以便移除。
+
+	SkipCircuitBreak bool `json:"skip_circuit_break" gorm:"-"` // 所属渠道是否跳过熔断; 路由据此决定该成员失败后是否进熔断表。
 }
 
 // 创建分组请求; 成员顺序即优先级顺序。

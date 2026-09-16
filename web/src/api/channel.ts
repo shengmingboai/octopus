@@ -87,6 +87,7 @@ export type ChannelDetail = {
     match_regex: string;
     auto_sync: boolean;
     auto_group: boolean;
+    skip_circuit_break: boolean;
 };
 
 // ChannelModelStats 是单个渠道模型的累计统计，自带名称与启停状态。

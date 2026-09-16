@@ -473,6 +473,7 @@
             "proxy": "Use proxy",
             "autoSync": "Auto fetch",
             "autoGroup": "Auto group",
+            "skipCircuitBreak": "Skip circuit break",
             "keys": "Credentials",
             "keyAdd": "Add credential",
             "keyName": "Name",

@@ -65,8 +65,9 @@ func ResetRouteState(groupID int) {
 }
 
 // pickGroupItem 按分组模式选择本轮目标成员, 没有可用成员时返回零值; group.Items 已按 Priority 升序排列。
+// excluded 为本请求内已耗尽尝试次数的成员: 跳过熔断的成员不会被熔断换人, 只能由此集合在本请求内排除。
 // 渠道是否可用不在此判断: 渠道禁用或缺少密钥由调用方发现并作为一轮失败上报, 该成员随即进入熔断而在后续轮次被跳过。
-func pickGroupItem(group model.Group) model.GroupItem {
+func pickGroupItem(group model.Group, excluded map[int]bool) model.GroupItem {
 	if group.Mode == model.GroupModeManual {
 		for _, item := range group.Items {
 			if item.ID == group.ActiveItemID {
@@ -85,12 +86,38 @@ func pickGroupItem(group model.Group) model.GroupItem {
 		route.AffinityUntil = 0
 	}
 
-	// 亲和期内沿用当前成员, 不提前探测已恢复的高优先级成员。
-	if route.CurrentItemID != 0 && route.AffinityUntil > now {
-		return itemOf(group, route.CurrentItemID)
+	// 亲和期内沿用当前成员, 不提前探测已恢复的高优先级成员; 当前成员已被本请求排除时同样往下找。
+	// 跳过熔断的成员不受亲和约束: 它承诺每个请求都按顺序优先尝试, 亲和不得把请求粘在它之后的成员上,
+	// 故亲和窗口内当前成员之前若还有未排除的跳过成员, 照常进入下方按顺序选路。
+	if route.CurrentItemID != 0 && route.AffinityUntil > now && !excluded[route.CurrentItemID] {
+		skipPreferred := false
+		for _, item := range group.Items {
+			if item.ID == route.CurrentItemID {
+				break
+			}
+			if item.SkipCircuitBreak && !excluded[item.ID] {
+				skipPreferred = true
+				break
+			}
+		}
+		if !skipPreferred {
+			return itemOf(group, route.CurrentItemID)
+		}
 	}
 
 	for _, item := range group.Items {
+		// 本请求内已耗尽尝试次数的成员不再重试。
+		if excluded[item.ID] {
+			continue
+		}
+		// 配置为跳过熔断的成员不承认任何熔断记录, 开关打开前的残留条目在此立即失效。
+		if item.SkipCircuitBreak {
+			if _, tripped := route.TrippedUntil[item.ID]; tripped {
+				delete(route.TrippedUntil, item.ID)
+				delete(route.tripCounts, item.ID)
+				publishRouteLocked(route)
+			}
+		}
 		// 遍历到当前成员说明比它优先级更高的成员都不可选, 沿用当前成员。
 		if item.ID == route.CurrentItemID {
 			break
@@ -112,7 +139,7 @@ func pickGroupItem(group model.Group) model.GroupItem {
 		publishRouteLocked(route)
 		return item
 	}
-	if route.CurrentItemID != 0 {
+	if route.CurrentItemID != 0 && !excluded[route.CurrentItemID] {
 		return itemOf(group, route.CurrentItemID)
 	}
 	return model.GroupItem{}
@@ -145,10 +172,11 @@ func recordRouteSuccess(group model.Group, itemID int) {
 		}
 		changed = true
 	}
-	// 亲和只在故障切换后的首次成功时开始, 使请求在一段时间内稳定留在备用成员上。
+	// 亲和只在故障切换后的首次成功时开始, 使请求在一段时间内稳定留在备用成员上;
+	// 跳过熔断的成员成功不开启亲和: 亲和会让这段时间内的请求跳过更高优先级的跳过成员, 与逐请求重试相悖。
 	if route.CurrentItemID == itemID && route.affinityArmed {
 		route.affinityArmed = false
-		if group.RelayConfig.MemberAffinitySeconds > 0 {
+		if group.RelayConfig.MemberAffinitySeconds > 0 && !itemOf(group, itemID).SkipCircuitBreak {
 			route.AffinityUntil = now + int64(group.RelayConfig.MemberAffinitySeconds)*1000
 			changed = true
 		}
@@ -158,11 +186,42 @@ func recordRouteSuccess(group model.Group, itemID int) {
 	}
 }
 
-// recordRouteFailure 上报一轮失败: 达到配置的总尝试次数后将该成员打入熔断并让出当前路由, 返回是否已熔断。
+// recordRouteFailure 上报一轮失败: 达到配置的总尝试次数后将该成员打入熔断并让出当前路由, 返回该成员在本请求内是否已用尽。
 // failures 为该成员在本请求内包含首次请求的连续失败次数, 由调用方累计。
+// 跳过熔断的成员不进熔断表, 跨请求永远可选, 稳定性完全由每个请求自身的重试与排除兜底; 让出路由的流程与熔断一致。
 func recordRouteFailure(group model.Group, itemID, failures int) bool {
 	if group.Mode == model.GroupModeManual {
 		return false
+	}
+
+	if itemOf(group, itemID).SkipCircuitBreak {
+		// 未耗尽尝试次数前无需改动路由状态; 耗尽后与熔断同样让出当前路由, 但不开启亲和:
+		// 亲和会把后续请求粘在备用成员上, 该成员就不再被每个请求优先尝试, 与跳过熔断的初衷相悖。
+		if failures < group.RelayConfig.MemberMaxAttempts {
+			return false
+		}
+		routeMu.Lock()
+		defer routeMu.Unlock()
+		route := routes[group.ID]
+		if route == nil {
+			return true
+		}
+		// 与熔断一致地释放探测占用, 否则开关切换瞬间的在途探测失败会把探测位永久卡住。
+		changed := false
+		if route.ProbeItemID == itemID {
+			route.ProbeItemID = 0
+			changed = true
+		}
+		if route.CurrentItemID == itemID {
+			route.CurrentItemID = 0
+			route.AffinityUntil = 0
+			route.affinityArmed = false
+			changed = true
+		}
+		if changed {
+			publishRouteLocked(route)
+		}
+		return true
 	}
 
 	routeMu.Lock()
