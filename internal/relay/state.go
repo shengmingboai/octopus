@@ -25,30 +25,31 @@ const (
 
 // RoundAttempt 记录单次重试轮次的完整信息。
 type RoundAttempt struct {
-	Round          int            `json:"round"`                    // 轮次序号。
-	StartedAt      time.Time      `json:"started_at"`               // 本轮开始时间。
-	Channel        string         `json:"channel"`                  // 本轮选中的渠道名称。
-	KeyName        string         `json:"key_name,omitempty"`       // 本轮使用的渠道凭据名称。
-	Model          string         `json:"model"`                    // 本轮实际请求上游的模型名称。
-	Protocol       model.Protocol `json:"protocol"`                 // 本轮实际请求上游的协议。
-	Duration       int64          `json:"duration"`                 // 本轮耗时(毫秒), 未结束时为 0。
-	Error          string         `json:"error,omitempty"`          // 本轮失败原因, 成功或进行中时为空。
-	Sending        bool           `json:"sending"`                  // 本轮是否仍在等待上游响应。
+	Round     int            `json:"round"`              // 轮次序号。
+	StartedAt time.Time      `json:"started_at"`         // 本轮开始时间。
+	Channel   string         `json:"channel"`            // 本轮选中的渠道名称。
+	KeyName   string         `json:"key_name,omitempty"` // 本轮使用的渠道凭据名称。
+	Model     string         `json:"model"`              // 本轮实际请求上游的模型名称。
+	Protocol  model.Protocol `json:"protocol"`           // 本轮实际请求上游的协议。
+	Duration  int64          `json:"duration"`           // 本轮耗时(毫秒), 未结束时为 0。
+	Error     string         `json:"error,omitempty"`    // 本轮失败原因, 成功或进行中时为空。
+	Sending   bool           `json:"sending"`            // 本轮是否仍在等待上游响应。
 }
 
 // 客户端请求的完整进程内状态, 同时作为状态流的消息形状; 上半部分在请求到达时写入并在结束时定稿, 下半部分每轮循环覆盖。
 type RequestState struct {
-	ID         uint64         `json:"id"`                   // 请求在当前进程内的唯一标识。
-	Status     Status         `json:"status"`               // 请求当前状态。
-	StartedAt  time.Time      `json:"started_at"`           // 请求到达时间。
-	Duration   time.Duration  `json:"duration"`             // 请求总耗时, 未结束时为零。
-	FirstToken time.Duration  `json:"first_token_duration"` // 流式首帧写出客户端的耗时, 非流式或尚未取得首字时为零。
-	Model      string         `json:"model"`                // 客户端请求的模型名称, 即分组名称。
-	Protocol   model.Protocol `json:"protocol"`             // 客户端请求使用的协议, 由入站格式定出, 单个协议位而非掩码组合。
-	GroupID    int            `json:"group_id"`             // 承载本请求的分组 ID, 供界面按主键直接定位分组而不必按名称回查。
-	APIKeyName string         `json:"api_key_name"`         // 发起请求时的 API Key 名称。
-	Usage      llm.Usage      `json:"usage"`                // 请求结束时写入的展示用量。
-	Cost       float64        `json:"cost"`                 // 请求结束时写入的累计费用。
+	ID          uint64         `json:"id"`                   // 请求在当前进程内的唯一标识。
+	Status      Status         `json:"status"`               // 请求当前状态。
+	StartedAt   time.Time      `json:"started_at"`           // 请求到达时间。
+	Duration    time.Duration  `json:"duration"`             // 请求总耗时, 未结束时为零。
+	FirstToken  time.Duration  `json:"first_token_duration"` // 流式首帧写出客户端的耗时, 非流式或尚未取得首字时为零。
+	Model       string         `json:"model"`                // 客户端请求的模型名称, 即分组名称。
+	Protocol    model.Protocol `json:"protocol"`             // 客户端请求使用的协议, 由入站格式定出, 单个协议位而非掩码组合。
+	GroupID     int            `json:"group_id"`             // 承载本请求的分组 ID, 供界面按主键直接定位分组而不必按名称回查。
+	APIKeyName  string         `json:"api_key_name"`         // 发起请求时的 API Key 名称。
+	Usage       llm.Usage      `json:"usage"`                // 请求结束时写入的展示用量。
+	Cost        float64        `json:"cost"`                 // 请求结束时写入的累计费用。
+	OutputChars int            `json:"output_chars"`         // 流式过程中实时累计的输出字符数, 仅用于界面展示, 不参与结算。
 
 	Round          int            `json:"round"`            // 最新一轮循环的递增序号, 人工中止按此匹配以免误杀下一轮。
 	RoundStartedAt time.Time      `json:"round_started_at"` // 最新一轮上游请求的开始时间。
@@ -64,10 +65,12 @@ type RequestState struct {
 	responseBody string             // 聚合后的完整最终响应体, 同样按需拉取。
 	apiKeyID     int                // 发起请求的 API Key ID, 用于请求完成后的归属统计。
 	cancel       context.CancelFunc // 中止最新一轮上游请求, 仅在该轮等待响应期间非空。
+	lastPublish  time.Time          // 上次向状态流发布快照的时间, 输出字符数按此节流发布。
 }
 
-const streamBuffer = 16 // 单个状态流连接的非阻塞消息缓冲容量。
-const maxFinished = 50  // 进程内最多保留的已结束请求数量。
+const streamBuffer = 16                              // 单个状态流连接的非阻塞消息缓冲容量。
+const maxFinished = 50                               // 进程内最多保留的已结束请求数量。
+const outputPublishInterval = 500 * time.Millisecond // 输出字符数实时推送的最短发布间隔。
 
 var (
 	idSeq    atomic.Uint64                          // 进程内严格递增的请求 ID。
@@ -107,6 +110,8 @@ func (r *RequestState) startRound(cancel context.CancelFunc, channel, keyName, m
 
 	r.Round++
 	r.RoundStartedAt = time.Now()
+	r.OutputChars = 0 // 新一轮从头计数, 避免累计上一轮未提交的输出。
+	r.lastPublish = time.Time{}
 	r.TargetChannel = channel
 	r.TargetKeyName = keyName
 	r.TargetModel = modelName
@@ -148,6 +153,18 @@ func (r *RequestState) finishRound(errText string) {
 	}
 
 	publishRequestLocked(r)
+}
+
+// addOutput 累加流式输出字符数并按节流间隔发布快照; 距上次发布不足阈值时只累加不出流。
+func (r *RequestState) addOutput(chars int) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	r.OutputChars += chars
+	if time.Since(r.lastPublish) >= outputPublishInterval {
+		r.lastPublish = time.Now()
+		publishRequestLocked(r)
+	}
 }
 
 // Interrupt 中止指定请求仍在等待响应且轮次匹配的上游请求; 轮次不匹配说明该轮已结束, 不影响后续轮次。

@@ -7,14 +7,15 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"unicode/utf8"
 
-	"github.com/shengmingboai/octopus/internal/model"
 	"github.com/looplj/axonhub/llm"
 	"github.com/looplj/axonhub/llm/httpclient"
 	"github.com/looplj/axonhub/llm/transformer"
 	"github.com/looplj/axonhub/llm/transformer/anthropic"
 	"github.com/looplj/axonhub/llm/transformer/openai"
 	"github.com/looplj/axonhub/llm/transformer/openai/responses"
+	"github.com/shengmingboai/octopus/internal/model"
 )
 
 // buildPassthroughRequest 构造同协议透传的上游请求: 目标地址, 认证和请求体由渠道决定, 客户端的其余请求头和查询参数
@@ -146,6 +147,43 @@ func inspectStreamEvent(format llm.APIFormat, event *httpclient.StreamEvent) (bo
 	default:
 		return false, nil
 	}
+}
+
+// outputTextDelta 返回客户端协议流事件中本次新增的输出文本字符数, 非文本事件返回 0。
+func outputTextDelta(format llm.APIFormat, data []byte) int {
+	var text string
+	switch format {
+	case llm.APIFormatOpenAIChatCompletion:
+		// 只累计正文 content, 不含 reasoning_content 等扩展字段。
+		var chunk struct {
+			Choices []struct {
+				Delta struct {
+					Content string `json:"content"`
+				} `json:"delta"`
+			} `json:"choices"`
+		}
+		if json.Unmarshal(data, &chunk) != nil {
+			return 0
+		}
+		for _, choice := range chunk.Choices {
+			text += choice.Delta.Content
+		}
+	case llm.APIFormatOpenAIResponse:
+		var event responses.StreamEvent
+		if json.Unmarshal(data, &event) != nil || event.Type != responses.StreamEventTypeOutputTextDelta {
+			return 0
+		}
+		text = event.Delta
+	case llm.APIFormatAnthropicMessage:
+		var event anthropic.StreamEvent
+		if json.Unmarshal(data, &event) != nil || event.Type != "content_block_delta" || event.Delta == nil || event.Delta.Type == nil || *event.Delta.Type != "text_delta" || event.Delta.Text == nil {
+			return 0
+		}
+		text = *event.Delta.Text
+	default:
+		return 0
+	}
+	return utf8.RuneCountInString(text)
 }
 
 // validateResponse 检查统一响应中需要在提交前判定为失败的终止原因; 仅 Responses 协议会以正常响应下发这类终态。
