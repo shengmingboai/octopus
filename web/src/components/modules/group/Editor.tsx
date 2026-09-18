@@ -27,10 +27,10 @@ export type GroupEditorValues = {
 // defaultRelayConfig 提供创建分组时的前端初始配置。
 const defaultRelayConfig: GroupRelayConfig = {
     member_max_attempts: 2,
-    member_retry_interval_seconds: 1,
+    member_retry_interval_seconds: 3,
     member_circuit_break_seconds: 60,
     member_max_circuit_break_seconds: 600,
-    member_affinity_seconds: 0,
+    member_affinity_seconds: 300,
 };
 
 // PROTOCOL_TAGS 是凭据行上的协议标识。
