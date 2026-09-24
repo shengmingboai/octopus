@@ -34,6 +34,10 @@ func init() {
 				Handle(interruptRound),
 		).
 		AddRoute(
+			router.NewRoute("/:request_id/stop", http.MethodPost).
+				Handle(stopRequest),
+		).
+		AddRoute(
 			router.NewRoute("/clear", http.MethodDelete).
 				Handle(clearLog),
 		)
@@ -52,6 +56,17 @@ func interruptRound(c *gin.Context) {
 		return
 	}
 	relay.Interrupt(requestID, round)
+	c.Status(http.StatusNoContent)
+}
+
+// stopRequest 取消指定的完整请求, 打断等待、当前轮次和后续所有重试。
+func stopRequest(c *gin.Context) {
+	requestID, err := strconv.ParseUint(c.Param("request_id"), 10, 64)
+	if err != nil {
+		resp.Error(c, http.StatusBadRequest, "invalid request id")
+		return
+	}
+	relay.CancelRequest(requestID)
 	c.Status(http.StatusNoContent)
 }
 

@@ -5,7 +5,7 @@ import JsonView from '@uiw/react-json-view';
 import { githubDarkTheme } from '@uiw/react-json-view/githubDark';
 import { githubLightTheme } from '@uiw/react-json-view/githubLight';
 import { useTheme } from '@/provider/theme';
-import { type RelayLogOverview, type RoundAttempt, useLogRequestBody, useLogResponseBody, useStopRound } from '@/api/log';
+import { type RelayLogOverview, type RoundAttempt, useLogRequestBody, useLogResponseBody, useStopRequest, useStopRound } from '@/api/log';
 import { useGroup, useUpdateGroup } from '@/api/group';
 import { Protocol } from '@/api/channel';
 import { getModelIcon } from '@/lib/model-icons';
@@ -172,11 +172,13 @@ function LogDetail({ log, now }: { log: RelayLogOverview; now: number }) {
     const { data: activeGroup } = useGroup(log.group_id, detailReady, detailReady);
     const updateActiveItem = useUpdateGroup();
     const stopRound = useStopRound();
+    const stopRequest = useStopRequest();
     const actualModel = log.target_model || log.model;
     const { Icon, className: iconClassName, color: brandColor } = getModelIcon(actualModel);
     const errorText = log.error ?? '';
     const requestFailed = log.status === 'failed' || log.status === 'canceled';
     const responseCommitted = log.status === 'committed';
+    const requestActive = log.status === 'running' || responseCommitted;
     const aggregatedRounds = useMemo(() => aggregateRoundsByChannelKey(log.rounds), [log.rounds]);
     const hasFailedRounds = aggregatedRounds.some(r => r.error);
     const isWaitingForSelection = log.status === 'running' && !log.sending && activeGroup?.mode === 'manual' && activeGroup.runtime.current_item_id === 0; // isWaitingForSelection 表示手动模式请求正等待选择渠道。
@@ -353,29 +355,49 @@ function LogDetail({ log, now }: { log: RelayLogOverview; now: number }) {
                             <span className="text-sm font-medium text-card-foreground">
                                 {isWaitingForSelection ? t('waitingChannelSelection') : requestFailed ? t('errorInfo') : t('responseContent')}
                             </span>
-                            {log.status === 'running' && log.sending && activeGroup?.mode === 'manual' ? (
-                                <button
-                                    type="button"
-                                    disabled={stopRound.isPending}
-                                    onClick={async () => {
-                                        try {
-                                            await stopRound.mutateAsync({ requestId: log.id, round: log.round });
-                                        } catch (cause) {
-                                            toast.error(t('stopFailed'), { description: cause instanceof Error ? cause.message : undefined });
-                                        }
-                                    }}
-                                    className="ml-auto flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50"
-                                >
-                                    {stopRound.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Square className="size-3.5" />}
-                                    {t('stopRound')}
-                                </button>
-                            ) : !requestFailed && (
-                                <Badge variant="secondary" className="ml-auto text-xs">
-                                    {responseCommitted
-                                        ? statusT('committed')
-                                        : `${log.usage.completion_tokens.toLocaleString()} ${t('tokens')}`}
-                                </Badge>
-                            )}
+                            <div className="ml-auto flex items-center gap-2">
+                                {log.status === 'running' && log.sending && activeGroup?.mode === 'manual' && (
+                                    <button
+                                        type="button"
+                                        disabled={stopRound.isPending}
+                                        onClick={async () => {
+                                            try {
+                                                await stopRound.mutateAsync({ requestId: log.id, round: log.round });
+                                            } catch (cause) {
+                                                toast.error(t('stopFailed'), { description: cause instanceof Error ? cause.message : undefined });
+                                            }
+                                        }}
+                                        className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50"
+                                    >
+                                        {stopRound.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Square className="size-3.5" />}
+                                        {t('stopRound')}
+                                    </button>
+                                )}
+                                {requestActive && (
+                                    <button
+                                        type="button"
+                                        disabled={stopRequest.isPending}
+                                        onClick={async () => {
+                                            try {
+                                                await stopRequest.mutateAsync({ requestId: log.id });
+                                            } catch (cause) {
+                                                toast.error(t('cancelFailed'), { description: cause instanceof Error ? cause.message : undefined });
+                                            }
+                                        }}
+                                        className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-50"
+                                    >
+                                        {stopRequest.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Square className="size-3.5" />}
+                                        {t('cancelRequest')}
+                                    </button>
+                                )}
+                                {!requestFailed && !(log.status === 'running' && log.sending && activeGroup?.mode === 'manual') && (
+                                    <Badge variant="secondary" className="text-xs">
+                                        {responseCommitted
+                                            ? statusT('committed')
+                                            : `${log.usage.completion_tokens.toLocaleString()} ${t('tokens')}`}
+                                    </Badge>
+                                )}
+                            </div>
                         </div>
                         <div className="min-h-0 flex-1 overflow-auto">
                             {!detailReady ? (

@@ -69,6 +69,14 @@ export function useStopRound() {
     });
 }
 
+// useStopRequest 取消指定的完整请求, 打断等待、当前轮次和后续所有重试。
+export function useStopRequest() {
+    return useMutation({
+        mutationFn: ({ requestId }: { requestId: number }) =>
+            apiRequest<null>(`/api/v1/log/${requestId}/stop`, { method: 'POST' }),
+    });
+}
+
 // useLogs 订阅进程内日志概览，并按 RequestID 更新同一条记录。
 export function useLogs() {
     const [logs, setLogs] = useState<RelayLogOverview[]>([]);
