@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useState, type CSSProperties } from 'react';
-import { AlertCircle, ArrowDownToLine, ArrowRight, ArrowUpFromLine, ChevronDown, ChevronUp, Clock, Database, DollarSign, Gauge, KeyRound, Loader2, Square, Timer } from 'lucide-react';
+import { AlertCircle, ArrowDownToLine, ArrowRight, ArrowUpFromLine, Brain, ChevronDown, ChevronUp, Clock, Database, DollarSign, Gauge, KeyRound, Loader2, Square, Timer } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import JsonView from '@uiw/react-json-view';
 import { githubDarkTheme } from '@uiw/react-json-view/githubDark';
@@ -192,22 +192,38 @@ function LogDetail({ log, now }: { log: RelayLogOverview; now: number }) {
     return (
         <MorphingDialogContent className="relative w-[calc(100vw-2rem)] md:w-[80vw] bg-card text-card-foreground px-6 py-4 rounded-3xl h-[calc(100vh-2rem)] flex flex-col overflow-hidden">
             <MorphingDialogClose className="top-4 right-5 text-muted-foreground hover:text-foreground transition-colors" />
-            <MorphingDialogTitle className="flex items-center gap-2 mb-3 text-sm">
-                <Icon aria-hidden="true" className={iconClassName} width={28} height={28} />
-                <span className="text-xs text-muted-foreground/70">{PROTOCOL_LABELS[log.protocol] ?? '-'}</span>
-                <span className="font-semibold text-card-foreground">{log.model || t('unknownModel')}</span>
-                {log.status === 'running' || responseCommitted
-                    ? <Loader2 className={cn('size-3.5 animate-spin', log.status === 'committed' ? 'text-green-500' : log.round > 1 ? 'text-red-500' : 'text-muted-foreground/50')} />
-                    : <ArrowRight className="size-3.5 text-muted-foreground/50" />}
-                <span className="text-xs text-muted-foreground/70">{PROTOCOL_LABELS[log.target_protocol] ?? '-'}</span>
-                <Badge
-                    variant="secondary"
-                    className="text-xs px-1.5 py-0"
-                    style={{ backgroundColor: `${brandColor}15`, color: brandColor }}
-                >
-                    {targetChannelText(log)}
-                </Badge>
-                <span className="text-muted-foreground">{actualModel}</span>
+            <MorphingDialogTitle className="flex flex-wrap items-center gap-x-2 gap-y-1 mb-3 text-sm">
+                <span className="flex min-w-0 items-center gap-2 w-full md:w-auto">
+                    <Icon aria-hidden="true" className={cn('hidden shrink-0 md:block', iconClassName)} width={28} height={28} />
+                    <span className="shrink-0 text-xs text-muted-foreground/70">
+                        <span className="md:hidden">{PROTOCOL_LABELS[log.protocol]?.charAt(0) ?? '-'}</span>
+                        <span className="hidden md:inline">{PROTOCOL_LABELS[log.protocol] ?? '-'}</span>
+                    </span>
+                    <span className="min-w-0 truncate font-semibold text-card-foreground">{log.model || t('unknownModel')}</span>
+                    {log.reasoning_effort && (
+                        <Badge variant="outline" className="max-w-32 shrink-0 bg-violet-500/10 px-1.5 py-0 text-xs text-violet-700 dark:text-violet-300">
+                            <Brain aria-hidden="true" />
+                            <span className="truncate">{log.reasoning_effort}</span>
+                        </Badge>
+                    )}
+                    {log.status === 'running' || responseCommitted
+                        ? <Loader2 className={cn('size-3.5 animate-spin', log.status === 'committed' ? 'text-green-500' : log.round > 1 ? 'text-red-500' : 'text-muted-foreground/50')} />
+                        : <ArrowRight className="size-3.5 text-muted-foreground/50" />}
+                </span>
+                <span className="flex min-w-0 items-center gap-2 w-full md:w-auto">
+                    <span className="shrink-0 text-xs text-muted-foreground/70">
+                        <span className="md:hidden">{PROTOCOL_LABELS[log.target_protocol]?.charAt(0) ?? '-'}</span>
+                        <span className="hidden md:inline">{PROTOCOL_LABELS[log.target_protocol] ?? '-'}</span>
+                    </span>
+                    <Badge
+                        variant="secondary"
+                        className="text-xs px-1.5 py-0"
+                        style={{ backgroundColor: `${brandColor}15`, color: brandColor }}
+                    >
+                        {targetChannelText(log)}
+                    </Badge>
+                    <span className="min-w-0 truncate text-muted-foreground">{actualModel}</span>
+                </span>
             </MorphingDialogTitle>
 
             <MorphingDialogDescription className="flex-1 min-h-0 flex flex-col">
@@ -469,24 +485,40 @@ function LogCardBody({ log }: { log: RelayLogOverview }) {
                 <div className={cn("p-4 grid grid-cols-[auto_1fr] gap-4", requestFailed ? "items-start" : "items-center")}>
                     <Icon aria-hidden="true" className={iconClassName} width={40} height={40} />
                     <div className="min-w-0 flex flex-col gap-3">
-                        <div className="flex items-center gap-2 min-w-0 text-sm">
-                            <span className="shrink-0 text-xs text-muted-foreground/70">{PROTOCOL_LABELS[log.protocol] ?? '-'}</span>
-                            <span className="font-semibold text-card-foreground truncate">
-                                {log.model || t('unknownModel')}
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0 text-sm">
+                            <span className="flex w-full min-w-0 items-center gap-2 md:w-auto">
+                                <span className="shrink-0 text-xs text-muted-foreground/70">
+                                    <span className="md:hidden">{PROTOCOL_LABELS[log.protocol]?.charAt(0) ?? '-'}</span>
+                                    <span className="hidden md:inline">{PROTOCOL_LABELS[log.protocol] ?? '-'}</span>
+                                </span>
+                                <span className="min-w-0 truncate font-semibold text-card-foreground">
+                                    {log.model || t('unknownModel')}
+                                </span>
+                                {log.reasoning_effort && (
+                                    <Badge variant="outline" className="max-w-32 shrink-0 bg-violet-500/10 px-1.5 py-0 text-xs text-violet-700 dark:text-violet-300">
+                                        <Brain aria-hidden="true" />
+                                        <span className="truncate">{log.reasoning_effort}</span>
+                                    </Badge>
+                                )}
+                                {requestRunning
+                                    ? <Loader2 className={cn('size-3.5 shrink-0 animate-spin', log.status === 'committed' ? 'text-green-500' : log.round > 1 ? 'text-red-500' : 'text-muted-foreground/50')} />
+                                    : <ArrowRight className="size-3.5 shrink-0 text-muted-foreground/50" />}
                             </span>
-                            {requestRunning
-                                ? <Loader2 className={cn('size-3.5 shrink-0 animate-spin', log.status === 'committed' ? 'text-green-500' : log.round > 1 ? 'text-red-500' : 'text-muted-foreground/50')} />
-                                : <ArrowRight className="size-3.5 shrink-0 text-muted-foreground/50" />}
-                            <span className="shrink-0 text-xs text-muted-foreground/70">{PROTOCOL_LABELS[log.target_protocol] ?? '-'}</span>
-                            <Badge
-                                variant="secondary"
-                                className="shrink-0 text-xs px-1.5 py-0"
-                                style={{ backgroundColor: `${brandColor}15`, color: brandColor }}
-                            >
-                                {targetChannelText(log)}
-                            </Badge>
-                            <span className="text-muted-foreground truncate">
-                                {actualModel}
+                            <span className="flex w-full min-w-0 items-center gap-2 md:w-auto">
+                                <span className="shrink-0 text-xs text-muted-foreground/70">
+                                    <span className="md:hidden">{PROTOCOL_LABELS[log.target_protocol]?.charAt(0) ?? '-'}</span>
+                                    <span className="hidden md:inline">{PROTOCOL_LABELS[log.target_protocol] ?? '-'}</span>
+                                </span>
+                                <Badge
+                                    variant="secondary"
+                                    className="shrink-0 text-xs px-1.5 py-0"
+                                    style={{ backgroundColor: `${brandColor}15`, color: brandColor }}
+                                >
+                                    {targetChannelText(log)}
+                                </Badge>
+                                <span className="text-muted-foreground truncate">
+                                    {actualModel}
+                                </span>
                             </span>
                         </div>
                         <div className="grid grid-cols-16 gap-x-4 gap-y-2 text-xs tabular-nums text-muted-foreground md:grid-cols-8">

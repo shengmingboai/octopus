@@ -37,6 +37,7 @@ export interface RelayLogOverview {
     duration: number;
     first_token_duration: number;
     model: string;
+    reasoning_effort: string;
     protocol: number;
     group_id: number;
     api_key_name: string;
