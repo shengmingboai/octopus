@@ -231,18 +231,13 @@ func (r *RequestState) markCommitted(streaming bool) {
 	publishRequestLocked(r)
 }
 
-// markSucceeded 以成功终态定稿请求; 请求级取消与上游成功同时到达时以取消定稿。
+// markSucceeded 以成功终态定稿请求; 调用时响应已完整交付, 客户端收完随即断开会取消请求上下文, 不能据此改判为取消。
 func (r *RequestState) markSucceeded(responseBody string, usage *llm.Usage) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	if r.requestCtx.Err() != nil {
-		r.Status = StatusCanceled
-		r.Error = r.requestCtx.Err().Error()
-	} else {
-		r.Status = StatusSuccess
-		r.Error = ""
-	}
+	r.Status = StatusSuccess
+	r.Error = ""
 	r.responseBody = responseBody
 	r.finishLocked(usage)
 }
