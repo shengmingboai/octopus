@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ChevronLeft, Plus, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { useTranslations } from 'use-intl';
 import {
     type ChannelDetail,
@@ -96,12 +97,16 @@ function ChannelFormFields({ channel, onBack }: { channel?: ChannelDetail; onBac
     };
 
     // 新建与编辑都一趟完成且都提交整份配置: 授权按名称引用, 与凭据和模型在同一次请求里原子生效。
+    // 失败时弹窗保持打开并提示后端给出的原因, 修改后可直接重试。
     const submit = (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         if (!canSubmit) return;
         const detail = toChannelDetail(state, channel?.id ?? 0);
         const mutation = channel ? updateChannel : createChannel;
-        mutation.mutate(detail, { onSuccess: () => setIsOpen(false) });
+        mutation.mutate(detail, {
+            onSuccess: () => setIsOpen(false),
+            onError: (error) => toast.error(error.message),
+        });
     };
 
     // 表单高度固定, 否则切换步骤时弹窗会随内容高度跳动; 内容更高的步骤由步骤区内部滚动消化。
