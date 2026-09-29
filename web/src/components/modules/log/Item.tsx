@@ -143,14 +143,14 @@ function JsonContent({ content, fallbackText }: { content: string | object | und
     );
 }
 
-// aggregateRoundsByChannelKey 按渠道与凭据聚合轮次, 每个渠道凭据组合只保留最后一次尝试。
-// 不能只按渠道聚合: 同一渠道内换凭据后成功, 该渠道的记录会被成功那轮覆盖, 此前凭据的失败就再也看不到。
+// aggregateRoundsByChannelKey 按渠道、凭据与模型聚合轮次, 每个组合只保留最后一次尝试。
+// 不能只按渠道聚合: 同一渠道内换凭据或换模型后成功, 该渠道的记录会被成功那轮覆盖, 此前的失败就再也看不到。
 function aggregateRoundsByChannelKey(rounds: RoundAttempt[] | undefined): RoundAttempt[] {
     if (!rounds || !rounds.length) return [];
     const roundMap = new Map<string, RoundAttempt>();
     for (const round of rounds) {
-        // 渠道名与凭据名以换行拼接成键, 两者都不会含换行, 不同组合不会撞键。
-        const key = `${round.channel}\n${round.key_name ?? ''}`;
+        // 渠道名、凭据名与模型名以换行拼接成键, 三者都不会含换行, 不同组合不会撞键。
+        const key = `${round.channel}\n${round.key_name ?? ''}\n${round.model ?? ''}`;
         const existing = roundMap.get(key);
         if (!existing || round.round > existing.round) {
             roundMap.set(key, round);
@@ -250,7 +250,7 @@ function LogDetail({ log, now }: { log: RelayLogOverview; now: number }) {
                                 {aggregatedRounds.filter(r => r.error).map((round) => (
                                     <div key={round.round} className="flex flex-col gap-1.5 px-3 py-2.5 text-xs">
                                         <div className="flex items-center gap-2">
-                                            <span className="shrink-0 font-semibold text-foreground">{round.key_name ? `${round.channel} · ${round.key_name}` : round.channel || '-'}</span>
+                                            <span className="shrink-0 font-semibold text-foreground">{[round.channel || '-', round.model, round.key_name].filter(Boolean).join(' · ')}</span>
                                             <span className="shrink-0 text-muted-foreground">{t('retryIndex', { index: round.round })}</span>
                                             {round.duration > 0 && (
                                                 <span className="shrink-0 text-muted-foreground tabular-nums">{formatMilliseconds(round.duration)}</span>
