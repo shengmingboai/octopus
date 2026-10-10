@@ -100,7 +100,7 @@ async function downloadBlob(blob: Blob, filename: string) {
 export function useExportDB() {
     return useMutation({
         mutationFn: async () => {
-            const res = await fetch('/api/v1/setting/export', {
+            const res = await fetch('./api/v1/setting/export', {
                 method: 'GET',
                 credentials: 'include',
             });
@@ -127,7 +127,7 @@ export function useImportDB() {
             const form = new FormData();
             form.append('file', file);
 
-            const res = await fetch('/api/v1/setting/import', {
+            const res = await fetch('./api/v1/setting/import', {
                 method: 'POST',
                 body: form,
                 credentials: 'include',
