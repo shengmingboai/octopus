@@ -19,7 +19,8 @@ import (
 )
 
 // buildPassthroughRequest 构造同协议透传的上游请求: 目标地址, 认证和请求体由渠道决定, 客户端的其余请求头和查询参数
-// 经 MergeInboundRequest 透传给上游, 其中认证类, 库自管类和逐跳类请求头会被丢弃以免覆盖渠道凭据。
+// 经 MergeInboundRequest 透传给上游, 其中认证类, 库自管类和逐跳类请求头会被丢弃以免覆盖渠道凭据;
+// Content-Type 与 User-Agent 同属库自管头, 需按客户端原值显式重建。
 // 地址与认证取自出站转换器对一个占位请求的转换结果, 使透传与跨协议转换共用同一套地址拼接, 避免两处规则分歧;
 // openai 与 anthropic 出站转换器会校验模型名非空, 故占位请求必须带本轮真实的上游模型名。
 func buildPassthroughRequest(format llm.APIFormat, raw *httpclient.Request, channel model.Channel, outbound transformer.Outbound, modelName string) (*httpclient.Request, error) {
@@ -46,6 +47,10 @@ func buildPassthroughRequest(format llm.APIFormat, raw *httpclient.Request, chan
 		Auth:      probe.Auth,
 		APIFormat: format.String(),
 	}, raw)
+	// User-Agent 属于库自管头不会透传, 需按客户端原值显式重建, 让上游按客户端身份处理请求。
+	if userAgent := raw.Headers.Get("User-Agent"); userAgent != "" {
+		request.Headers.Set("User-Agent", userAgent)
+	}
 	request, err = httpclient.FinalizeAuthHeaders(request)
 	if err != nil {
 		return nil, err
