@@ -193,7 +193,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 
 			roundStartedAt := time.Now() // 本轮上游调用的开始时间, 用于统计首个有效响应耗时。
 
-			// 请求上游并等待首个有效响应: 非流式等待完整响应, 流式等待首个事件。
+			// 请求上游并等待首个有效响应: 非流式等待完整响应, 流式暂存启动事件直到输出开始或成功结束。
 			// 同协议渠道原样直通, 跨协议渠道经转换后请求; 此时尚未写给客户端, 失败仍可换目标重试。
 			var result *upstreamResponse
 			if err == nil {
@@ -242,7 +242,7 @@ func Forward(format llm.APIFormat) gin.HandlerFunc {
 				request.markCanceled(ctx.Err(), "", result.usage)
 				return
 			}
-			roundWaitTime := time.Since(roundStartedAt).Milliseconds() // 流式响应只统计等待首帧的时间。
+			roundWaitTime := time.Since(roundStartedAt).Milliseconds() // 流式响应统计到启动事件可以提交为止。
 			// 上游成功后解除该成员的熔断与探测占用, 并按路由配置开始亲和。
 			recordRouteSuccess(group, item.ID)
 			// 同协议透传时原样返回上游响应头; 跨协议响应没有需要透传的响应头。
